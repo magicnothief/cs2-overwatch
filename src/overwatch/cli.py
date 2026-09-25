@@ -97,14 +97,21 @@ def setup(args: argparse.Namespace) -> int:
     print(f"Files live in {paths.HOME}")
     if not fetch_models(judge=not args.no_judge):
         return 1
-    if not args.no_judge:
-        chosen = load_settings()
-        build = server.candidates(chosen.gpu_layers, prefer_cuda=chosen.prefer_cuda)[0]
-        print(f"Judge engine: llama.cpp {server.RELEASE}, {build.name} build")
-        server.install(build, paths.ENGINES, _progress)
+    try:
+        if not args.no_judge:
+            chosen = load_settings()
+            build = server.candidates(
+                chosen.gpu_layers, prefer_cuda=chosen.prefer_cuda
+            )[0]
+            print(f"Judge engine: llama.cpp {server.RELEASE}, {build.name} build")
+            server.install(build, paths.ENGINES, _progress)
+            print()
+        source2.viewer(paths.TOOLS, _progress)
         print()
-    source2.viewer(paths.TOOLS, _progress)
-    print()
+    except (OSError, RuntimeError) as exc:  # URLError is an OSError
+        print(f"\nA download did not finish: {exc}")
+        print("Run `overwatch setup` again to pick up where it stopped.")
+        return 1
     found = find_cs2_maps(load_settings().cs2)
     print(
         f"CS2: {found}"

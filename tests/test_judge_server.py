@@ -146,3 +146,46 @@ def test_the_prompt_is_the_one_the_judge_was_evaluated_with() -> None:
         )
     )
     assert rendered == server.render_prompt("the rules", "the evidence")
+
+
+def test_a_dropped_download_is_retried_and_resumed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The first connection dies halfway; the retry asks for the rest only."""
+    import urllib.error
+
+    from overwatch import downloads
+
+    payload = bytes(range(256)) * 64
+    asked: list[str | None] = []
+
+    class Response(io.BytesIO):
+        def __init__(self, body: bytes, status: int, total: int) -> None:
+            super().__init__(body)
+            self.status = status
+            self.headers = {"Content-Length": str(total)}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            self.close()
+
+    def urlopen(request, timeout):
+        asked.append(request.headers.get("Range"))
+        if len(asked) == 1:  # half the file arrives, then the connection drops
+            part = tmp_path / "file.bin.part"
+            part.write_bytes(payload[:5000])
+            raise urllib.error.URLError("connection reset")
+        start = int(request.headers["Range"].split("=")[1].rstrip("-"))
+        return Response(payload[start:], 206, len(payload) - start)
+
+    monkeypatch.setattr(downloads.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(downloads.time, "sleep", lambda _s: None)
+    got = downloads.fetch(
+        "https://example.invalid/file.bin",
+        tmp_path / "file.bin",
+        hashlib.sha256(payload).hexdigest(),
+    )
+    assert got.read_bytes() == payload
+    assert asked == [None, "bytes=5000-"]
