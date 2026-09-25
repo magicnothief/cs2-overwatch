@@ -22,9 +22,10 @@ from overwatch.layers.l4_judge import server
 from overwatch.layers.l4_judge.rendering import SYSTEM_PROMPT, PlayerCase, render_case
 from overwatch.layers.l4_judge.verdict import VERDICT_SCHEMA, Verdict
 
-#: The judge in use: fine-tune v3 (evidence-only targets, clean-player lines shown
-#: in the text), exported from Unsloth Studio. Earlier versions and how they
-#: compare: training/llm/README.md.
+#: The judge in use: fine-tune v4 (evidence-only targets, clean-player lines shown
+#: in the text, fast kills counted rather than the single fastest reaction),
+#: exported from Unsloth Studio. Earlier versions and how they compare:
+#: training/llm/README.md.
 DEFAULT_MODEL = models.JUDGE.local
 #: The untuned model every fine-tune is measured against (baseline_judge.py).
 STOCK_MODEL = paths.MODELS / "llm" / "qwen3.5-4b-instruct-Q4_K_M.gguf"

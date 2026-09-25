@@ -91,10 +91,41 @@ uv run python training/llm/evaluate_judge.py --model models/llm/<your>.gguf --li
 answers to cases by match and player. Per-case answers are in
 `data/processed/judge_eval_*.jsonl`. RTX 3060.
 
+**v4 against v3** (2026-09-26), 206 validation cases on the evidence text with
+fast kills counted (`judge_training_fastkills/`), prebuilt llama-server on Vulkan:
+
+| measure | v3 | v4 (default) |
+|---|---|---|
+| valid JSON | 100% | 100% |
+| matches the target | 80.6% | 92.2% |
+| calls clean players cheaters | 0.9% | 2.8% |
+| calls banned players cheaters | 15.3% | 28.6% |
+| answers "unclear" | 32% | 26% |
+| right when it commits | 77.9% | 77.6% |
+| probability ROC-AUC | 0.792 | 0.779 |
+| follows the evidence | 0.90 | 0.95 |
+| leans on the behaviour score | 0.27 | 0.13 |
+| invented numbers | 2 | 0 |
+| speed | 1.7 s/case | 2.2 s/case |
+
+What changed in the evidence: "fastest reaction" (one kill decides it; 3.4% of
+clean players have a 0 ms kill, from pre-fires at held angles) became the number
+of kills within 50 ms of the enemy appearing (two or more: 3.7% of clean
+players, 29% of banned ones, 0.3% of pros). v3, never trained on the new line,
+garbled it once; v4 reads it. v4's three accused clean-labelled players each
+show evidence past the clean 99th percentile (CS2CD's clean labels are
+unverified), and it held back on four more whose targets say cheating.
+
+On 341 pro players (`training/check_pro_demos.py`, 35 HLTV matches) v4 accused
+none, like v3, but answered "unclear" for 6.7% (v3: 1.5%): 19 of those 23 rest on
+one very fast turn on a kill tick, usually an AWP flick. The targets make that
+"unclear" and v4 follows its targets closely; the rule is the thing to change
+before a v5.
+
 **v3 against v2** (2026-09-25), 207 validation cases, both on today's evidence
 text (which shows the clean-player lines):
 
-| measure | v2 | v3 (default) |
+| measure | v2 | v3 |
 |---|---|---|
 | valid JSON | 100% | 100% |
 | matches the target | 81.6% | 88.9% |
@@ -139,6 +170,8 @@ day, before the lines were shown):
 - **v2** (`Qwen3.5-4B_STEP_122.Q4_K_M.gguf`) trained on evidence-only targets.
 - **v3** (`V3/Full/Qwen3.5-4B.Q4_K_M.gguf`) trained on the same targets with the
   95th/99th-percentile lines shown in the text, so every target can be read off it.
+- **v4** (`V4/Qwen3.5-4B.Q4_K_M.gguf`, default since 2026-09-26) trained on the
+  fast-kill evidence, same settings as v3, in Unsloth Studio on Windows.
 
 Through llama-cpp-python, on an RTX 3060 with every layer offloaded: **8 s per case**. The
 JSON grammar, not the GPU, is now the limit: it is enforced on the CPU token by

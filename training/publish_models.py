@@ -6,7 +6,7 @@ Needs a Hugging Face token with write access (`hf auth login`). Uploads, in one
 commit:
 
     detector/scorer.onnx, detector/scorer.json   models/scorer/
-    judge/judge-v3.Q4_K_M.gguf                   the judge in use (--judge)
+    judge/judge-v4.Q4_K_M.gguf                   the judge in use (--judge)
     README.md                                    the model card below
 
 then prints what to paste into src/overwatch/models.py: the commit every
@@ -49,7 +49,7 @@ to fetch them by hand.
 |---|---|
 | `detector/scorer.onnx` | a 1D CNN that scores each kill's aim trajectory (136 KB) |
 | `detector/scorer.json` | its architecture and the frozen clean-player reference a score is read against |
-| `judge/judge-v3.Q4_K_M.gguf` | Qwen3.5-4B fine-tuned (QLoRA) to write a verdict from the evidence, Q4_K_M |
+| `judge/judge-v4.Q4_K_M.gguf` | Qwen3.5-4B fine-tuned (QLoRA) to write a verdict from the evidence, Q4_K_M |
 
 ## What they are for
 
@@ -64,11 +64,13 @@ kills in the training data; it is evidence to examine, not proof.
   per-player ROC-AUC 0.93 in match-grouped cross-validation. Line of sight comes
   from ray casts against each map's collision mesh, not the game's spotting flag,
   which is biased against snipers.
-- **Judge (v3):** fine-tuned on generated verdicts whose targets depend only on
+- **Judge (v4):** fine-tuned on generated verdicts whose targets depend only on
   evidence shown in the text (never on the ban label), with clean players' 95th
-  and 99th percentiles printed beside every measurement. On held-out cases it
-  matches its targets 87% of the time, accuses 1.9% of clean players, and cited
-  no number absent from the evidence in 206 answers.
+  and 99th percentiles printed beside every measurement. On 206 held-out cases it
+  matches its targets 92% of the time, convicts 29% of banned players, accuses
+  2.8% of clean-labelled ones (each where the evidence itself is past the clean
+  99th percentile), and cites no number absent from the evidence. On 341 pro
+  players from 35 HLTV matches it accused none.
 
 ## Credits and licences
 
@@ -99,7 +101,7 @@ def main() -> None:
     parser.add_argument(
         "--judge",
         type=Path,
-        default=ROOT / "models" / "llm" / "V3" / "Full" / "Qwen3.5-4B.Q4_K_M.gguf",
+        default=ROOT / "models" / "llm" / "V4" / "Qwen3.5-4B.Q4_K_M.gguf",
     )
     parser.add_argument(
         "--code", default="https://github.com/magicnothief/cs2-overwatch"
@@ -111,7 +113,7 @@ def main() -> None:
     files = {
         "detector/scorer.onnx": ROOT / "models" / "scorer" / "scorer.onnx",
         "detector/scorer.json": ROOT / "models" / "scorer" / "scorer.json",
-        "judge/judge-v3.Q4_K_M.gguf": args.judge,
+        "judge/judge-v4.Q4_K_M.gguf": args.judge,
     }
     stage = ROOT / "data" / "publish"
     shutil.rmtree(stage, ignore_errors=True)
@@ -134,7 +136,7 @@ def main() -> None:
         commit = api.upload_folder(
             repo_id=args.repo,
             folder_path=stage,
-            commit_message="Detector and judge v3",
+            commit_message="Judge v4: fast kills counted; detector reference to match",
         )
         revision = commit.oid
 
