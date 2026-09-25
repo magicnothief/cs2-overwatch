@@ -241,8 +241,8 @@ button.quiet {
   background: var(--paper);
   /* the outer ring is the lane's own colour, so touching rings stay two rings */
   box-shadow: inset 0 0 0 1.75px var(--graphite), 0 0 0 2px var(--halo, var(--paper));
+  /* no transition: a ring must appear where it belongs, not slide there */
   translate: var(--dx, 0px) var(--dy, 0px);
-  transition: translate 0.15s;
   animation: arrive 0.35s both;
   animation-delay: calc(var(--round) * 28ms);
 }

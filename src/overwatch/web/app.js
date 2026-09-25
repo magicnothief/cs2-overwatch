@@ -277,15 +277,30 @@ async function report(id, params) {
   const radar = await radarFor(data.map_name);
   const fresh = view.dataset.report !== id;
   view.dataset.report = id;
-  view.replaceChildren(
-    matchHeader(data),
-    timeline(data, players, player, kill, fresh),
-    el("section", { class: "detail" },
-      el("div", {}, kill ? killDetail(kill, radar, data.map_name) : el("p", { class: "muted" }, "This player has no kills to show.")),
-      player ? playerPanel(player, data) : null),
-  );
+  const detail = el("section", { class: "detail" },
+    el("div", {}, kill ? killDetail(kill, radar, data.map_name) : el("p", { class: "muted" }, "This player has no kills to show.")),
+    player ? playerPanel(player, data) : null);
+  // choosing another kill in the same report keeps the timeline as it is: rebuilt,
+  // every ring would be laid out again and the lanes' sideways scroll would reset
+  const kept = !fresh && view.querySelector(".timeline");
+  if (kept) {
+    markSelection(kept, player, kill);
+    view.querySelector(".detail").replaceWith(detail);
+  } else {
+    view.replaceChildren(matchHeader(data), timeline(data, players, player, kill, fresh), detail);
+    dodgeKills();
+  }
   keyboard = (e) => navigate(e, id, players, player, kill);
-  dodgeKills();
+}
+
+/** Move the timeline's highlight to this player and kill without redrawing it. */
+function markSelection(grid, player, kill) {
+  const id = player ? player.player_id : null;
+  grid.querySelectorAll("[data-player]").forEach((n) => n.classList.toggle("selected", n.dataset.player === id));
+  grid.querySelectorAll(".kill.selected").forEach((n) => n.classList.remove("selected"));
+  if (id && kill) {
+    grid.querySelector(`.cell[data-player="${CSS.escape(id)}"] .kill[data-tick="${kill.tick}"]`)?.classList.add("selected");
+  }
 }
 
 /** Teams together (by starting side), flagged players and high scores first. */
@@ -402,6 +417,7 @@ function timeline(data, players, selected, kill, animate) {
           class: "kill" + (k.headshot ? " headshot" : "") + (watch.has(k.tick) ? " watch" : "") +
             (kill && isSelected && k.tick === kill.tick ? " selected" : ""),
           "data-at": ((4 + 92 * at) / 100).toFixed(4),
+          "data-tick": k.tick,
           style: `left:${(4 + 92 * at).toFixed(1)}%; --d:${size}px; --round:${animate ? i : 0};` +
             (animate ? "" : "animation:none"),
           title: label,
