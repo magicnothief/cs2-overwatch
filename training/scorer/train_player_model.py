@@ -1,6 +1,7 @@
 """Train and honestly evaluate a per-player cheat scorer.
 
 Run:  uv run python training/scorer/train_player_model.py
+      uv run python training/scorer/train_player_model.py --features-only
 
 Splits are grouped by match, never by player or window: two players from the
 same match share a server, a map and an opponent pool, so putting one in train
@@ -163,6 +164,15 @@ def make_figure(
 
 
 def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--features-only",
+        action="store_true",
+        help="write player_features.parquet and stop (no model, no figures)",
+    )
+    features_only = parser.parse_args().features_only
     # the weapon only feeds sniper_share, which is context for the judge and is
     # kept out of the model's inputs (CONTEXT_COLUMNS)
     window_features = pl.read_parquet(PROCESSED / "window_features.parquet").join(
@@ -178,6 +188,9 @@ def main() -> None:
         pl.col("label").is_in(["cheater", "clean"])
     )
     players.write_parquet(PROCESSED / "player_features.parquet")
+    if features_only:
+        print(f"wrote {PROCESSED / 'player_features.parquet'} ({players.height} players)")
+        return
 
     feature_names = [c for c in PLAYER_FEATURE_COLUMNS if c in players.columns]
     x = players.select(feature_names).to_numpy().astype(float)
