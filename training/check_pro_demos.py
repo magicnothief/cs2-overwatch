@@ -63,7 +63,7 @@ MAPS = ("ancient", "anubis", "dust2", "inferno", "mirage", "nuke", "overpass")
 def sample(per_map: int, seed: int) -> list[str]:
     from huggingface_hub import HfApi
 
-    listing = OUT / "listing.json"
+    listing = OUT / "listing.json"  # the dataset's file list, shared by every run
     if listing.exists():
         demos = json.loads(listing.read_text())
     else:
@@ -82,7 +82,7 @@ def sample(per_map: int, seed: int) -> list[str]:
     ]
 
 
-def run(demos: list[str], *, keep: bool, gpu_layers: int | str) -> None:
+def run(demos: list[str], *, out: Path, keep: bool, gpu_layers: int | str) -> None:
     from huggingface_hub import hf_hub_download
 
     chosen = load_settings()
@@ -91,7 +91,7 @@ def run(demos: list[str], *, keep: bool, gpu_layers: int | str) -> None:
     print(f"judge: {judge.describe()}", flush=True)
     raw = paths.DATA / "raw" / "hltv"
     for n, remote in enumerate(demos, 1):
-        report_path = OUT / "reports" / (Path(remote).stem + ".json")
+        report_path = out / "reports" / (Path(remote).stem + ".json")
         if report_path.exists():
             continue
         started = time.perf_counter()
@@ -123,9 +123,9 @@ def run(demos: list[str], *, keep: bool, gpu_layers: int | str) -> None:
     judge.close()
 
 
-def summarise() -> None:
+def summarise(out: Path) -> None:
     reports = [
-        json.loads(p.read_text()) for p in sorted((OUT / "reports").glob("*.json"))
+        json.loads(p.read_text()) for p in sorted((out / "reports").glob("*.json"))
     ]
     players = [
         (r, p) for r in reports for p in r["players"] if p.get("enough_kills", True)
@@ -200,11 +200,19 @@ def main() -> None:
     parser.add_argument("--keep", action="store_true", help="keep the downloaded demos")
     parser.add_argument("--gpu-layers", default="auto")
     parser.add_argument("--summary", action="store_true", help="only summarise")
+    parser.add_argument(
+        "--out", type=Path, default=OUT, help="where reports go (one folder per run)"
+    )
     args = parser.parse_args()
     if not args.summary:
         gpu = args.gpu_layers if args.gpu_layers == "auto" else int(args.gpu_layers)
-        run(sample(args.per_map, args.seed), keep=args.keep, gpu_layers=gpu)
-    summarise()
+        run(
+            sample(args.per_map, args.seed),
+            out=args.out,
+            keep=args.keep,
+            gpu_layers=gpu,
+        )
+    summarise(args.out)
 
 
 if __name__ == "__main__":

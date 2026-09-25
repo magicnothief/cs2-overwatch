@@ -81,7 +81,12 @@ def reference(data: Path, cv_label: str) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", type=Path, default=PROCESSED)
-    parser.add_argument("--cv-label", default="meshfix")
+    parser.add_argument(
+        "--cv-label",
+        default=None,
+        help="cross_validate.py run to take the reference from (default: meshes23, "
+        "or with --refresh-reference the run the bundle already names)",
+    )
     parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--width", type=int, default=32)
     parser.add_argument("--pooling", choices=("avgmax", "attention"), default="avgmax")
@@ -98,12 +103,14 @@ def main() -> None:
 
     if args.refresh_reference:
         bundle = torch.load(args.out, map_location="cpu", weights_only=False)
+        args.cv_label = args.cv_label or bundle.get("cv_label", "meshes23")
         bundle["reference"] = reference(args.data, args.cv_label)
         torch.save(bundle, args.out)
         shipped = export_scorer(bundle, args.out)
         print(f"refreshed the reference in {args.out} and {shipped}")
         return
 
+    args.cv_label = args.cv_label or "meshes23"
     cached = np.load(args.data / "sequences.npz", allow_pickle=True)
     data = {k: cached[k] for k in ("x", "y", "groups", "players", "uids")}
     if data["x"].shape[1] != len(CHANNELS) or data["x"].shape[2] != PRE + POST + 1:
