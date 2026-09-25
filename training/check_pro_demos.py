@@ -82,13 +82,15 @@ def sample(per_map: int, seed: int) -> list[str]:
     ]
 
 
-def run(demos: list[str], *, out: Path, keep: bool, gpu_layers: int | str) -> None:
+def run(
+    demos: list[str], *, out: Path, model: Path, keep: bool, gpu_layers: int | str
+) -> None:
     from huggingface_hub import hf_hub_download
 
     chosen = load_settings()
     scorer = Scorer()
-    judge = Judge(DEFAULT_MODEL, gpu_layers=gpu_layers, prefer_cuda=chosen.prefer_cuda)
-    print(f"judge: {judge.describe()}", flush=True)
+    judge = Judge(model, gpu_layers=gpu_layers, prefer_cuda=chosen.prefer_cuda)
+    print(f"judge: {model.name} on {judge.describe()}", flush=True)
     raw = paths.DATA / "raw" / "hltv"
     for n, remote in enumerate(demos, 1):
         report_path = out / "reports" / (Path(remote).stem + ".json")
@@ -203,12 +205,14 @@ def main() -> None:
     parser.add_argument(
         "--out", type=Path, default=OUT, help="where reports go (one folder per run)"
     )
+    parser.add_argument("--model", type=Path, default=DEFAULT_MODEL, help="judge GGUF")
     args = parser.parse_args()
     if not args.summary:
         gpu = args.gpu_layers if args.gpu_layers == "auto" else int(args.gpu_layers)
         run(
             sample(args.per_map, args.seed),
             out=args.out,
+            model=args.model,
             keep=args.keep,
             gpu_layers=gpu,
         )
