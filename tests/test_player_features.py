@@ -45,8 +45,10 @@ def test_shares_and_extremes() -> None:
     assert row["straight_share"] == pytest.approx(0.4)
     assert row["snap_max"] == pytest.approx(900.0)
     assert row["snap_share"] == pytest.approx(0.2)  # one kill over 200 deg/s
-    # perception columns need victim geometry, which this fixture has none of
-    assert set(PLAYER_FEATURE_COLUMNS) - set(PERCEPTION_COLUMNS) <= set(row)
+    assert row["snap_kills"] == 1
+    # perception and timing columns need victim geometry, which this has none of
+    timing = {"arrival_kills", "arrival_shot_share"}
+    assert set(PLAYER_FEATURE_COLUMNS) - set(PERCEPTION_COLUMNS) - timing <= set(row)
 
 
 def test_sniper_share_is_context_never_a_model_input() -> None:

@@ -18,6 +18,7 @@ from __future__ import annotations
 import polars as pl
 
 from overwatch.aim import TICK_RATE
+from overwatch.layers.l3_behavior.shots import SHOT_COLUMNS, arrival_features
 
 #: Segment bounds in ticks relative to the kill (inclusive).
 IDLE = (-128, -64)
@@ -52,6 +53,7 @@ FEATURE_COLUMNS: tuple[str, ...] = (
     "speed_change_std",
     "peak_pitch_speed_engage",
     *PERCEPTION_COLUMNS,
+    *SHOT_COLUMNS,
 )
 
 #: Aiming this close counts as "on the target" for the wall-tracking check.
@@ -185,6 +187,8 @@ def build_window_features(window_ticks: pl.DataFrame) -> pl.DataFrame:
     frames = [peak, engage_stats, at_kill, after, idle]
     if "target_visible" in window_ticks.columns:
         frames.append(_perception_features(window_ticks, engage))
+    if {"shot", "target_angle", "target_distance"} <= set(window_ticks.columns):
+        frames.append(arrival_features(window_ticks))
 
     out = base
     for frame in frames:

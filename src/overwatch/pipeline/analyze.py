@@ -452,6 +452,21 @@ def _kill_reports(
     """Every kill of one player, most suspicious first (as the judge ranks them)."""
     by_uid = dict(window_scores.select("window_uid", "score").iter_rows())
     victims = dict(kills.select("window_uid", "victim_id").iter_rows())
+    arrivals = (
+        dict(kills.select("window_uid", "arrival_delay_ms").iter_rows())
+        if "arrival_delay_ms" in kills.columns
+        else {}
+    )
+    shots = (
+        dict(
+            window_ticks.filter(pl.col("shot"))
+            .group_by("window_uid")
+            .agg(pl.col("t_ms").sort())
+            .iter_rows()
+        )
+        if "shot" in window_ticks.columns
+        else {}
+    )
     starts = [r.start_tick for r in rounds]
 
     def round_of(tick: int) -> int | None:
@@ -474,6 +489,8 @@ def _kill_reports(
                 score=by_uid.get(m.window_uid),
                 aim_through_cover=m.wall_aim_share,
                 reaction_ms=m.reaction_ms,
+                shots_ms=[round(t) for t in shots.get(m.window_uid, [])],
+                arrival_delay_ms=arrivals.get(m.window_uid),
                 seen_first=m.visible_before_kill,
                 context=describe(m.model_dump()) or None,
                 trajectory=trajectory_for(window_ticks, m.window_uid),

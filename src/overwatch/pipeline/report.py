@@ -52,6 +52,14 @@ class KillReport(BaseModel):
         default=None, description="share of the last 0.5 s aimed at a hidden enemy"
     )
     reaction_ms: float | None = None
+    shots_ms: list[int] = Field(
+        default_factory=list, description="the attacker's shots, ms relative to the kill"
+    )
+    arrival_delay_ms: float | None = Field(
+        default=None,
+        description="opening shot's delay after the crosshair reached the head; "
+        "0 is the very tick (triggerbot timing, shots.py)",
+    )
     seen_first: bool | None = Field(
         default=None, description="was the victim visible at any point before dying"
     )

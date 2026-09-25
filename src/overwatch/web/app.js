@@ -489,12 +489,17 @@ function killDetail(k, radarMeta, mapName, shooter) {
   if (k.aim_through_cover != null) facts.push(`The crosshair was on the enemy through cover for ${pct(k.aim_through_cover)} of the last half second.`);
   if (k.seen_first === false) facts.push("The enemy was never visible before dying.");
   else if (k.reaction_ms != null && k.reaction_ms < 1990) facts.push(`The kill came ${Math.round(k.reaction_ms)} ms after the enemy became visible.`);
+  if (k.arrival_delay_ms != null) {
+    facts.push(k.arrival_delay_ms === 0
+      ? "The first shot came on the very tick the crosshair reached the head."
+      : `The first shot came ${Math.round(k.arrival_delay_ms)} ms after the crosshair reached the head.`);
+  }
   if (k.context) facts.push(`${sentence(k.context)}.`);
   if (k.score != null) facts.push(`The model scores this kill ${k.score.toFixed(2)} out of 1.`);
 
   const copy = copyButton(k.demo_command);
 
-  const chart = trace(k.trajectory);
+  const chart = trace(k.trajectory, k.shots_ms || []);
   const map = radarView(k, radarMeta, mapName, shooter);
   const moments = k.path.map((p) => p.ms);
   const shot = Math.max(0, moments.indexOf(0));
@@ -515,7 +520,8 @@ function killDetail(k, radarMeta, mapName, shooter) {
         chart,
         el("div", { class: "trace-key" },
           el("span", {}, el("span", { class: "swatch", style: "background:var(--paper)" }), "enemy visible"),
-          el("span", {}, el("span", { class: "swatch", style: "background:repeating-linear-gradient(45deg,#f2f4f6 0 3px,#c9d0d7 3px 5px)" }), "enemy behind cover")),
+          el("span", {}, el("span", { class: "swatch", style: "background:repeating-linear-gradient(45deg,#f2f4f6 0 3px,#c9d0d7 3px 5px)" }), "enemy behind cover"),
+          (k.shots_ms || []).length ? el("span", {}, el("span", { class: "swatch fire" }), "a shot") : null),
         el("p", { class: "legend" }, moments.length ? "Move along the trace, or use the slider, to step both players through the approach." : ""))),
     el("ul", { class: "facts" }, facts.map((f) => el("li", {}, f))),
     el("div", { class: "goto" }, el("code", {}, k.demo_command), copy),
@@ -749,7 +755,7 @@ function radarView(k, meta, mapName, shooter) {
 }
 
 /** Crosshair-to-head distance over the last 1.5 s, hidden stretches hatched. */
-function trace(points) {
+function trace(points, shots = []) {
   if (!points || !points.length) return el("p", { class: "muted" }, "No trace was recorded for this kill.");
   const NS = "http://www.w3.org/2000/svg";
   // drawn at the width it will be shown, so its labels stay readable on a phone
@@ -785,6 +791,10 @@ function trace(points) {
     add("text", { x: X(ms), y: H - 10, "text-anchor": ms === -1500 ? "start" : "middle" }, label);
   }
   add("line", { class: "shot", x1: X(0), x2: X(0), y1: T, y2: H - B });
+  // every shot the attacker fired, as a tick on the time axis
+  for (const ms of shots.filter((s) => s >= x0 && s <= x1)) {
+    add("line", { class: "fire", x1: X(ms), x2: X(ms), y1: H - B - 9, y2: H - B });
+  }
   add("path", { class: "line", d: points.map((p, i) => `${i ? "L" : "M"}${X(p.ms).toFixed(1)},${Y(p.angle).toFixed(1)}`).join("") });
   points.forEach((p) => add("circle", { class: "dot", cx: X(p.ms), cy: Y(p.angle), r: 2.6 }));
   const cursor = add("line", { class: "cursor", y1: T, y2: H - B });

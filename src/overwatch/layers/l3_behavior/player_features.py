@@ -32,6 +32,10 @@ MIN_KILLS = 5
 #: fast kills in 3.7% of clean CS2CD players, 29% of banned ones, 0.3% of pros.
 FAST_REACTION_MS = 50.0
 
+#: The share of kills fired on the crosshair's arrival tick (shots.py) means
+#: little over fewer kills with an arrival than this.
+MIN_ARRIVAL_KILLS = 5
+
 #: Sniper rifles. Their share is context for a reviewer, not evidence: cheaters in
 #: CS2CD snipe far more than clean players, so sniping inflates the perception
 #: measurements on its own (ADR 0008).
@@ -62,6 +66,7 @@ PLAYER_FEATURE_COLUMNS: tuple[str, ...] = (
     "snap_max",
     "snap_p90",
     "snap_share",
+    "snap_kills",
     "peak_speed_p90",
     "peak_speed_median",
     "settle_ratio_median",
@@ -70,6 +75,8 @@ PLAYER_FEATURE_COLUMNS: tuple[str, ...] = (
     "idle_speed_median",
     "zero_motion_share",
     *PERCEPTION_COLUMNS,
+    "arrival_kills",
+    "arrival_shot_share",
 )
 
 
@@ -119,12 +126,19 @@ def build_player_features(
         # kills where the victim was never visible before dying
         "never_visible_share": (~pl.col("visible_before_kill")).mean(),
     }
+    # triggerbot timing (shots.py): kills where the crosshair came onto the head
+    # before the opening shot, and the share of them fired on that very tick
+    timing = {
+        "arrival_kills": pl.col("arrival_shot").is_not_null().sum(),
+        "arrival_shot_share": pl.col("arrival_shot").mean(),
+    }
     context = (
         {"sniper_share": pl.col("weapon").is_in(SNIPERS).mean()}
         if "weapon" in window_features.columns
         else {}
     )
     has_perception = "visible_share_engage" in window_features.columns
+    has_timing = "arrival_shot" in window_features.columns
 
     players = (
         window_features.group_by("match_id", "player_id", "label")
@@ -136,6 +150,8 @@ def build_player_features(
             snap_max=pl.col("speed_at_kill").max(),
             snap_p90=pl.col("speed_at_kill").quantile(0.9),
             snap_share=(pl.col("speed_at_kill") > SNAP_THRESHOLD_DPS).mean(),
+            # a count, not the fastest single turn: one flick is common, several not
+            snap_kills=(pl.col("speed_at_kill") > SNAP_THRESHOLD_DPS).sum(),
             peak_speed_p90=pl.col("peak_speed_engage").quantile(0.9),
             peak_speed_median=pl.col("peak_speed_engage").median(),
             settle_ratio_median=pl.col("settle_ratio").median(),
@@ -143,10 +159,17 @@ def build_player_features(
             pitch_peak_median=pl.col("peak_pitch_speed_engage").median(),
             idle_speed_median=pl.col("mean_speed_idle").median(),
             **(perception if has_perception else {}),
+            **(timing if has_timing else {}),
             **context,
         )
         .filter(pl.col("n_kills") >= min_kills)
     )
+    if has_timing:
+        players = players.with_columns(
+            arrival_shot_share=pl.when(pl.col("arrival_kills") >= MIN_ARRIVAL_KILLS)
+            .then(pl.col("arrival_shot_share"))
+            .otherwise(None)
+        )
 
     if window_ticks is not None:
         players = players.join(

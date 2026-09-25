@@ -29,6 +29,7 @@ from overwatch.aim import add_aim_features, kill_windows
 from overwatch.layers.l2_perception.awareness import add_context
 from overwatch.layers.l2_perception.geometry import angles_to_target
 from overwatch.layers.l2_perception.geometry.occlusion import has_map, line_of_sight
+from overwatch.layers.l3_behavior.shots import mark_shots
 from overwatch.parsing import ParsedMatch, load_cs2cd_cached
 
 log = logging.getLogger(__name__)
@@ -85,7 +86,8 @@ def match_windows(
         on="window_id",
         how="inner",
     )
-    return windows, add_victim_geometry(window_ticks, match.ticks, map_name=map_name)
+    window_ticks = add_victim_geometry(window_ticks, match.ticks, map_name=map_name)
+    return windows, mark_shots(window_ticks, match.events.get("weapon_fire"))
 
 
 def build_match_windows(

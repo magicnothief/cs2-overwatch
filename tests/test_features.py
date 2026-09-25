@@ -8,6 +8,7 @@ from overwatch.layers.l3_behavior.features import (
     PERCEPTION_COLUMNS,
     build_window_features,
 )
+from overwatch.layers.l3_behavior.shots import SHOT_COLUMNS
 
 
 def _window(d_yaws: list[float], *, pre: int = 4, post: int = 2) -> pl.DataFrame:
@@ -66,6 +67,7 @@ def test_peak_and_settle() -> None:
 def test_aim_feature_columns_are_present_without_geometry() -> None:
     """Windows with no victim geometry still produce every aim feature."""
     features = build_window_features(_window([0.0, 1.0, 2.0, 3.0, 1.0, 0.0, 0.0]))
-    assert set(FEATURE_COLUMNS) - set(PERCEPTION_COLUMNS) <= set(features.columns)
-    assert not set(PERCEPTION_COLUMNS) & set(features.columns)
+    needs_geometry = {*PERCEPTION_COLUMNS, *SHOT_COLUMNS}
+    assert set(FEATURE_COLUMNS) - needs_geometry <= set(features.columns)
+    assert not needs_geometry & set(features.columns)
     assert features.height == 1
