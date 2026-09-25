@@ -35,6 +35,9 @@ def home() -> Path:
 
 
 HOME = home()
+#: Running from a source checkout, on its own files: models there are the
+#: developer's (perhaps just retrained) and are never replaced by downloads.
+IN_CHECKOUT = _checkout() == HOME
 DATA = HOME / "data"
 MODELS = HOME / "models"
 MAPS = DATA / "maps"
@@ -50,6 +53,7 @@ __all__ = [
     "DATA",
     "ENGINES",
     "HOME",
+    "IN_CHECKOUT",
     "MAPS",
     "MODELS",
     "RADARS",

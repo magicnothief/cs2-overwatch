@@ -3,6 +3,7 @@
     overwatch                     start the app and open it in the browser
     overwatch analyze match.dem   review one demo in the terminal
     overwatch setup               download everything now, and show what was found
+    overwatch update              install the latest release
 
 The first start downloads the models (the detector, 150 KB, and the judge,
 2.8 GB); the judge engine and each map follow when first needed. `--no-judge`
@@ -81,7 +82,7 @@ def start(args: argparse.Namespace) -> int:
     if not args.no_browser:
         threading.Timer(1.0, webbrowser.open, [url]).start()
     uvicorn.run(
-        create_app(runner),
+        create_app(runner, check_updates=True),
         host="127.0.0.1",  # local only: there are no accounts
         port=args.port,
         log_level="warning",
@@ -142,6 +143,15 @@ def main(argv: list[str] | None = None) -> None:
             sys.exit(1)
         analyze(argv[1:])
         return
+    if argv[:1] in (["--version"], ["-V"]):
+        from overwatch.updates import installed_version
+
+        print(f"overwatch {installed_version()}")
+        return
+    if argv[:1] == ["update"]:
+        from overwatch.updates import run_update
+
+        sys.exit(run_update())
     if not argv or (argv[0].startswith("-") and argv[0] not in ("-h", "--help")):
         argv = ["start", *argv]  # `overwatch --no-judge` means start without it
 
@@ -162,6 +172,7 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser(
         "analyze", help="review one demo in the terminal (see: overwatch analyze -h)"
     )
+    sub.add_parser("update", help="install the latest release")
     start_args = sub.choices["start"]
     start_args.add_argument("--port", type=int, default=8000)
     start_args.add_argument("--no-browser", action="store_true")

@@ -1,6 +1,6 @@
 [project]
 name = "cs2-overwatch"
-version = "0.2.0"
+version = "0.3.0"
 description = "Review CS2 demos for cheating, Overwatch style, on your own PC"
 readme = "README.md"
 license = "AGPL-3.0-or-later"

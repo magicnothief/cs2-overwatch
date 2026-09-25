@@ -5,6 +5,7 @@ cs2   CS2's folder, when Steam's library list does not show it (a dual-boot
 gpu   "auto" runs the judge on a GPU with room for it (Vulkan), "cuda" tries
       NVIDIA's CUDA build first (a little faster, a 600 MB download), "off"
       keeps it on the CPU (the GPU is left free for games or training)
+updates  ask GitHub once a day whether a newer release is out (updates.py)
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ FILE = paths.HOME / "settings.json"
 class Settings(BaseModel):
     cs2: str | None = None
     gpu: Literal["auto", "cuda", "off"] = "auto"
+    updates: bool = True
 
     @property
     def gpu_layers(self) -> int | str:

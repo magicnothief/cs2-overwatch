@@ -45,7 +45,7 @@ def main() -> None:
     )
     print(f"open http://127.0.0.1:{args.port}", flush=True)
     uvicorn.run(
-        create_app(runner, uploads=args.uploads),
+        create_app(runner, uploads=args.uploads, check_updates=True),
         host="127.0.0.1",  # local only: there are no accounts
         port=args.port,
         log_level="warning",

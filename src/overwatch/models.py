@@ -5,8 +5,14 @@
 
 Both are published in a Hugging Face model repo (MODELS_REPO), pinned to one
 commit (REVISION), and every file is checked against the SHA-256 recorded here,
-so a download is exactly the model that was evaluated. A development checkout
-already has them in models/, and nothing is downloaded.
+so a download is exactly the model that was evaluated.
+
+A file counts as present only when its hash matches: after an update pins a new
+model, the old file is replaced rather than kept. Hashes are cached beside each
+file (<file>.sha256, keyed on its size and modification time), so the 2.8 GB
+judge is hashed once, not on every start. A development checkout already has
+its models in models/, and keeps them even when they differ (a model just
+retrained there must not be overwritten by a download).
 
 After retraining, training/publish_models.py uploads the new files and prints
 the lines to paste here.
@@ -17,6 +23,7 @@ folder as file:///...) with the same layout.
 
 from __future__ import annotations
 
+import hashlib
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -45,7 +52,31 @@ class ModelFile:
 
     @property
     def present(self) -> bool:
-        return self.local.exists()
+        """Here, and exactly the pinned version."""
+        return self.local.exists() and local_sha256(self.local) == self.sha256
+
+
+def local_sha256(path: Path) -> str:
+    """A file's SHA-256, cached beside it against its size and modification time."""
+    stat = path.stat()
+    key = f"{stat.st_size} {stat.st_mtime_ns}"
+    cache = path.with_name(path.name + ".sha256")
+    try:
+        cached_key, digest = cache.read_text().split("\n")[:2]
+        if cached_key == key and len(digest) == 64:
+            return digest
+    except (OSError, ValueError):
+        pass
+    hasher = hashlib.sha256()
+    with path.open("rb") as fh:
+        while chunk := fh.read(1 << 24):
+            hasher.update(chunk)
+    digest = hasher.hexdigest()
+    try:
+        cache.write_text(f"{key}\n{digest}\n")
+    except OSError:
+        pass  # a read-only folder only costs the next start a re-hash
+    return digest
 
 
 DETECTOR = (
@@ -71,8 +102,13 @@ JUDGE = ModelFile(
 
 
 def missing(*, judge: bool = True) -> list[ModelFile]:
+    """The files to download: absent ones, and outdated ones outside a checkout."""
     wanted = [*DETECTOR, JUDGE] if judge else list(DETECTOR)
-    return [m for m in wanted if not m.present]
+    return [
+        m
+        for m in wanted
+        if not m.local.exists() or (not paths.IN_CHECKOUT and not m.present)
+    ]
 
 
 def download(files: list[ModelFile], progress: Progress | None = None) -> None:
@@ -83,4 +119,12 @@ def download(files: list[ModelFile], progress: Progress | None = None) -> None:
         fetch(base_url() + model.remote, model.local, model.sha256, tell)
 
 
-__all__ = ["DETECTOR", "JUDGE", "MODELS_REPO", "ModelFile", "download", "missing"]
+__all__ = [
+    "DETECTOR",
+    "JUDGE",
+    "MODELS_REPO",
+    "ModelFile",
+    "download",
+    "local_sha256",
+    "missing",
+]

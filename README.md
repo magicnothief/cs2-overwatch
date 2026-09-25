@@ -47,6 +47,9 @@ Then start it with `overwatch`: it opens in your browser. Nothing leaves your PC
   list, set the folder under "This computer".
 - `overwatch setup` downloads everything up front and reports what it found.
   `overwatch analyze match.dem` reviews a demo in the terminal.
+- **Updating:** the app says on its first page when a new version is out.
+  `overwatch update` installs it (on Windows: run the install command again).
+  What changed is in [CHANGELOG.md](CHANGELOG.md).
 - Uninstall: `uv tool uninstall cs2-overwatch`, then delete the app's folder
   (`%LOCALAPPDATA%\cs2-overwatch` or `~/.local/share/cs2-overwatch`).
 
@@ -77,6 +80,12 @@ keeps its files in `data/` and `models/` here; installed, in the user folder
 above (`src/overwatch/paths.py`). After retraining,
 `training/publish_models.py` uploads the models and prints the manifest lines
 for `src/overwatch/models.py`.
+
+To release: raise `version` in `pyproject.toml`, add its section to
+`CHANGELOG.md`, commit, then `git tag vX.Y.Z && git push --tags`. The release
+workflow checks the tag against the version, runs the tests, builds the package
+and publishes the release with that section as its notes; installs and
+`overwatch update` pick it up from there.
 
 Needs `models/scorer/scorer.onnx` + `scorer.json` and, for the judge, a GGUF in `models/llm/`. To
 rebuild everything from CS2CD, in order:

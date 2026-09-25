@@ -1,0 +1,41 @@
+# Publish a release when a version tag is pushed:  git tag v0.3.0 && git push --tags
+#
+# The tag must match the version in pyproject.toml, and CHANGELOG.md must have a
+# section for it: its text becomes the release notes. The built package (.whl)
+# is attached; the install scripts and `overwatch update` install it from there.
+name: release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+      - name: The tag matches the package version
+        run: |
+          version=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          test "v$version" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME, pyproject.toml says $version"; exit 1; }
+      - name: Tests
+        run: |
+          uv sync --no-default-groups --group test
+          uv run --no-sync pytest -q
+      - name: Build the package
+        run: uv build
+      - name: Release notes from CHANGELOG.md
+        run: |
+          awk -v v="${GITHUB_REF_NAME#v}" '
+            $0 ~ "^## " v "( |$)" { on = 1; next }
+            /^## / { on = 0 }
+            on' CHANGELOG.md > notes.md
+          test -s notes.md || { echo "CHANGELOG.md has no section for ${GITHUB_REF_NAME#v}"; exit 1; }
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --title "Overwatch review $GITHUB_REF_NAME" --notes-file notes.md

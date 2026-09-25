@@ -19,13 +19,15 @@ import hashlib
 import json
 import os
 import re
+import threading
+from dataclasses import asdict
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from overwatch import paths
+from overwatch import paths, updates
 from overwatch.api.jobs import Runner
 from overwatch.layers.l4_judge.server import nvidia_cuda_major
 from overwatch.maps.steam import find_cs2_maps, maps_folder
@@ -42,9 +44,25 @@ _MAP_NAME = re.compile(r"^[a-z0-9_]+$")
 
 
 def create_app(
-    runner: Runner, *, uploads: Path = paths.UPLOADS, radars: Path = paths.RADARS
+    runner: Runner,
+    *,
+    uploads: Path = paths.UPLOADS,
+    radars: Path = paths.RADARS,
+    check_updates: bool = False,
 ) -> FastAPI:
+    """`check_updates` asks GitHub for a newer release in the background (once a
+    day at most, and only with the updates setting on); tests leave it off."""
     app = FastAPI(title="Overwatch review", docs_url=None, redoc_url=None)
+    news: dict = {"update": None}
+
+    def look_for_updates() -> None:
+        if runner.settings().updates:
+            release = updates.check()
+            if release is not None:
+                news["update"] = asdict(release) | {"command": updates.update_command()}
+
+    if check_updates:
+        threading.Thread(target=look_for_updates, daemon=True).start()
     app.mount("/static", StaticFiles(directory=WEB), name="static")
 
     @app.get("/", include_in_schema=False)
@@ -53,7 +71,10 @@ def create_app(
 
     @app.get("/api/status")
     def status() -> dict:
-        return runner.status()
+        return runner.status() | {
+            "version": updates.installed_version(),
+            "update": news["update"],
+        }
 
     @app.post("/api/analyses")
     async def analyse(
@@ -125,6 +146,7 @@ def create_app(
             "cs2": chosen.cs2,
             "cs2_found": str(found) if found else None,
             "gpu": chosen.gpu,
+            "updates": chosen.updates,
             "nvidia": nvidia_cuda_major() is not None,
             "home": str(paths.HOME),
         }

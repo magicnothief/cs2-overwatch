@@ -42,6 +42,17 @@ const WEAPONS = {
 };
 const weapon = (id) => (id ? WEAPONS[id] || (id.startsWith("knife") || id.startsWith("bayonet") ? "knife" : id) : null);
 
+/** A button that copies `text`, and says whether that worked. */
+function copyButton(text) {
+  const button = el("button", { type: "button", class: "quiet" }, "Copy");
+  button.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(text); button.textContent = "Copied"; }
+    catch { button.textContent = "Select and copy it"; }
+    setTimeout(() => (button.textContent = "Copy"), 1600);
+  });
+  return button;
+}
+
 const sentence = (text) => (text ? text[0].toUpperCase() + text.slice(1) : "");
 const pct = (share) => `${Math.round(100 * share)}%`;
 const timeAgo = (seconds) => {
@@ -129,8 +140,19 @@ async function home() {
       )
     : el("p", { class: "muted" }, "Reviews you run appear here.");
 
-  view.replaceChildren(zone, el("h2", {}, "Earlier reviews"), el("div", { style: "margin-top:1rem" }, history),
+  view.replaceChildren(status?.update ? updateNotice(status) : "", zone,
+    el("h2", {}, "Earlier reviews"), el("div", { style: "margin-top:1rem" }, history),
     machine ? settingsPanel(machine) : "");
+}
+
+/** A newer release is out: what it is, where its notes are, how to install it. */
+function updateNotice(status) {
+  const u = status.update;
+  return el("aside", { class: "update", "aria-label": "Update available" },
+    el("p", {}, el("strong", {}, `Version ${u.version} is out`), ` (this is ${status.version}). `,
+      u.url ? el("a", { href: u.url, target: "_blank", rel: "noopener" }, "What's new") : null,
+      u.url ? ". " : "", "To update, close the app and run:"),
+    el("div", { class: "goto" }, el("code", {}, u.command), copyButton(u.command)));
 }
 
 /** Where CS2 is, and whether the judge may use the GPU: saved on this computer. */
@@ -139,7 +161,7 @@ function settingsPanel(machine) {
   const save = async (change) => {
     const res = await fetch("/api/settings", {
       method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ cs2: machine.cs2, gpu: machine.gpu, ...change }),
+      body: JSON.stringify({ cs2: machine.cs2, gpu: machine.gpu, updates: machine.updates !== false, ...change }),
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) { said.textContent = body.detail || "That was not saved."; said.className = "said flag"; return; }
@@ -185,6 +207,11 @@ function settingsPanel(machine) {
           ? gpu("cuda", "on the graphics card through CUDA: a little faster, a 600 MB download once")
           : null,
         gpu("off", "on the processor only, leaving the graphics card free"))),
+      el("dt", {}, "Updates"),
+      el("dd", {}, el("label", {},
+        el("input", { type: "checkbox", checked: machine.updates !== false,
+          onchange: (e) => save({ updates: e.target.checked }) }),
+        " Ask GitHub once a day whether a new version is out")),
       el("dt", {}, "Files"),
       el("dd", {}, el("p", {}, "Models, maps and reviews are kept in ", el("code", {}, machine.home)))),
     said);
@@ -465,12 +492,7 @@ function killDetail(k, radarMeta, mapName, shooter) {
   if (k.context) facts.push(`${sentence(k.context)}.`);
   if (k.score != null) facts.push(`The model scores this kill ${k.score.toFixed(2)} out of 1.`);
 
-  const copy = el("button", { type: "button", class: "quiet" }, "Copy");
-  copy.addEventListener("click", async () => {
-    try { await navigator.clipboard.writeText(k.demo_command); copy.textContent = "Copied"; }
-    catch { copy.textContent = "Select and copy it"; }
-    setTimeout(() => (copy.textContent = "Copy"), 1600);
-  });
+  const copy = copyButton(k.demo_command);
 
   const chart = trace(k.trajectory);
   const map = radarView(k, radarMeta, mapName, shooter);
@@ -877,4 +899,5 @@ async function route() {
 }
 
 window.addEventListener("hashchange", route);
+api("/api/status").then((s) => { if (s.version) document.getElementById("version").textContent = `Overwatch review ${s.version}. `; }).catch(() => {});
 route();

@@ -3,12 +3,20 @@
 #   powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/magicnothief/cs2-overwatch/master/install.ps1 | iex"
 #
 # It gets uv (the tool manager the app installs with) if it is missing, then the
-# app, into your user folder: no administrator rights needed. The models (2.8 GB)
-# download on first start. Uninstall: uv tool uninstall cs2-overwatch, then
-# delete %LOCALAPPDATA%\cs2-overwatch.
+# latest release of the app, into your user folder: no administrator rights
+# needed. The models (2.8 GB) download on first start. Running it again updates
+# the app. Uninstall: uv tool uninstall cs2-overwatch, then delete
+# %LOCALAPPDATA%\cs2-overwatch.
 $ErrorActionPreference = "Stop"
 
-$Source = "https://github.com/magicnothief/cs2-overwatch/archive/refs/heads/master.zip"
+$Repo = "magicnothief/cs2-overwatch"
+# the latest release's package; the newest code when nothing is released yet
+$Source = "cs2-overwatch @ https://github.com/$Repo/archive/refs/heads/master.zip"
+try {
+    $Release = Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest"
+    $Wheel = $Release.assets | Where-Object { $_.name -like "*.whl" } | Select-Object -First 1
+    if ($Wheel) { $Source = $Wheel.browser_download_url }
+} catch { }
 
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
     Write-Host "Installing uv, which installs and updates the app..."
@@ -16,7 +24,7 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
     $env:Path = "$env:USERPROFILE\.local\bin;$env:Path"
 }
 
-uv tool install --python 3.12 --force "cs2-overwatch @ $Source"
+uv tool install --python 3.12 --force "$Source"
 uv tool update-shell | Out-Null
 
 Write-Host ""
