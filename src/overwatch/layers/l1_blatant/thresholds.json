@@ -1,0 +1,12 @@
+{
+  "spin_speed_dps": 2620.0,
+  "spin_min_ticks": 16,
+  "alias_min_step_deg": 90.0,
+  "alias_min_ticks": 6,
+  "snap_speed_dps": 2210.0,
+  "max_pitch_deg": 89.0,
+  "clean_speed_p9999": 1308.7,
+  "clean_snap_p9999": 1472.4,
+  "clean_pitch_max": 89.0,
+  "calibrated_on_matches": 120
+}

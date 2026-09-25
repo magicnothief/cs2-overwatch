@@ -1,0 +1,69 @@
+[project]
+name = "cs2-overwatch"
+version = "0.2.0"
+description = "Review CS2 demos for cheating, Overwatch style, on your own PC"
+readme = "README.md"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Bence Zsély", email = "domain@magicnothief.hu" }
+]
+requires-python = "==3.12.*"
+# What the app needs to run. Training (PyTorch, LightGBM, ...) is in the
+# "train" group, which a user's install never pulls in.
+dependencies = [
+    "demoparser2>=0.42.0",
+    "embreex>=4.4.0",
+    "fastapi>=0.141.1",
+    "numpy>=2",
+    "onnxruntime>=1.30.0",
+    "pillow>=11",
+    "platformdirs>=4",
+    "polars>=1.44.2",
+    "pydantic>=2.13.5",
+    "scipy>=1.16",
+    "trimesh>=5.1.0",
+    "uvicorn>=0.53.0",
+]
+
+[project.scripts]
+overwatch = "overwatch.cli:main"
+
+[tool.uv.build-backend]
+module-name = "overwatch"
+
+[build-system]
+requires = ["uv_build>=0.12.17,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+train = [
+    "awpy>=2.0.2",
+    "lightgbm>=4.7.0",
+    "onnx>=1.23.0",
+    "onnxscript>=0.7.2",
+    "pyarrow>=25.0.1",
+    "scikit-learn>=1.9.1",
+    "torch>=2.14.0",
+]
+# what the tests need beyond the app (CI installs only this)
+test = [
+    "gguf>=0.19.0",
+    "httpx2>=2.13",  # FastAPI's test client
+    "jinja2>=3.1.6",
+    "pytest>=9.1.1",
+]
+dev = [
+    { include-group = "test" },
+    "huggingface-hub>=0.35",
+    "icecream>=2.2.0",
+    "jupyterlab>=4.6.3",
+    "matplotlib>=3.11.2",
+    "python-dotenv>=1.2.3",
+    "ruff>=0.16.8",
+    "shap>=0.52.0",
+]
+
+[tool.uv]
+# a plain  in the checkout installs everything, training included
+default-groups = ["dev", "train"]

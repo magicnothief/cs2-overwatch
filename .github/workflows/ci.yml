@@ -1,0 +1,40 @@
+# Tests on Linux and Windows, then installs the app the way a user would and
+# lets it fetch its small downloads (the detector model, Source2Viewer), so a
+# broken Windows path or a moved download shows up here first.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+      - name: Install the app and the test tools (no training packages)
+        run: uv sync --no-default-groups --group test
+      - name: Tests
+        run: uv run --no-sync pytest -q
+
+  install:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+      - name: Install as a user would
+        run: uv tool install --python 3.12 .
+      - name: The command runs
+        run: uv tool run --from . overwatch --help
+      - name: First-run downloads work (without the 2.8 GB judge)
+        run: uv tool run --from . overwatch setup --no-judge

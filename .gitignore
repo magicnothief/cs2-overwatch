@@ -1,0 +1,28 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.pytest_cache/
+.ruff_cache/
+
+# Data & weights (keep the READMEs)
+data/**
+!data/README.md
+!data/SOURCES.md
+models/**
+!models/README.md
+!models/*/README.md
+*.dem
+*.gguf
+*.pt
+*.onnx
+*.safetensors
+runs/
+
+# Local
+.env
+*.sqlite
+tools/
+# a tiny random-weight scorer the tests run on (tests/test_pipeline.py)
+!tests/fixtures/scorer_tiny.onnx
