@@ -114,6 +114,18 @@ choices, brought in as a component rather than the page's frame.
   reader, which the principles allow.
 - A 10 m scale bar, because the kill facts give distances in metres.
 - Maps with no radar still get the trails on a plain field, and say so.
+- **Valve's radars where the game has one** (2026-09-26, after "the Nuke radar is
+  almost unrecognisable"). Drawn radars are faithful but a floor of many small
+  rooms turns into blobs; Nuke was the worst. CS2 ships a hand-drawn radar for 16
+  maps (every active-duty map, Office, Italy, Cache, the Arms Race maps), with a
+  lower-floor image for Nuke, Vertigo, Train and Baggage and an overview file
+  that places it in the world. It is read from the user's own CS2 like the
+  meshes, and recoloured into the page's greys (`maps/radar.py` restyle):
+  brightness becomes the floor tone, so tunnels and covered areas are dimmer;
+  a change of Valve's colour becomes a faint seam, which keeps rooms, ramps and
+  boxes apart; Valve's thin outlines and our outer wall line stay dark. Team
+  colours stay reserved for players. Maps without one keep the drawn radar, and
+  a map prepared before this is upgraded on its next analysis.
 - **Maps nobody recorded** (de_eldorado, cache, the Arms Race maps, ...) are drawn
   from the collision mesh instead: floors with room to stand, reached on foot from
   the spawn points without passing a wall or player clip

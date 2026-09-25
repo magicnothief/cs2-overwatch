@@ -221,6 +221,81 @@ def meta(map_name: str, frame: Frame, source: str, split: float | None = None) -
     return out
 
 
+#: Valve radars, recoloured: tunnels and lower areas are a dimmer floor, the rest
+#: runs up to white; Valve's seams between areas stay as faint lines.
+DEEP = np.array([228, 233, 238])
+SEAM = np.array([170, 179, 188])
+
+
+def restyle(image: Image.Image) -> Image.Image:
+    """Valve's coloured radar in the page's greys, on the same void as ours.
+
+    Brightness becomes the floor tone (Valve draws lower and covered areas
+    darker), a change of colour becomes a thin seam (the edges of rooms, ramps
+    and boxes), Valve's thin dark outlines stay dark, and the playable area's
+    outer edge is drawn as the wall line, as on the radars drawn from meshes.
+    """
+    a = np.asarray(image.convert("RGBA"), dtype=float)
+    rgb, alpha = a[..., :3], a[..., 3] / 255
+    lum = rgb @ np.array([0.2126, 0.7152, 0.0722])
+    inside = alpha > 0.5
+    if not inside.any():
+        msg = "the radar image is empty"
+        raise ValueError(msg)
+    lo, hi = np.percentile(lum[inside], [2, 98])
+    t = np.clip((lum - lo) / max(hi - lo, 1), 0, 1) ** 0.7
+    out = DEEP + (HIGH - DEEP) * t[..., None]
+    change = np.max(
+        [
+            np.hypot(
+                ndimage.sobel(ndimage.gaussian_filter(rgb[..., c], 0.6), 0),
+                ndimage.sobel(ndimage.gaussian_filter(rgb[..., c], 0.6), 1),
+            )
+            for c in range(3)
+        ],
+        axis=0,
+    )
+    out[(change > 90) & inside] = SEAM
+    # Valve's outlines are thin dark lines; a dark *area* (a tunnel, the floor
+    # below) is floor, and keeps its dimmer tone
+    dark = (lum < lo + 0.18 * (hi - lo)) & inside
+    out[dark & ~ndimage.binary_opening(dark, iterations=2)] = EDGE
+    solid = ndimage.binary_opening(inside, iterations=1)
+    out[solid & ~ndimage.binary_erosion(solid, iterations=2)] = EDGE
+    mix = alpha[..., None]
+    return Image.fromarray((VOID * (1 - mix) + out * mix).astype(np.uint8))
+
+
+def save_valve(
+    map_name: str, images: dict[str, Image.Image], overview, out: Path
+) -> None:
+    """Write Valve's radar images, recoloured, and <map>.json to place them."""
+    out.mkdir(parents=True, exist_ok=True)
+    size = images[""].width
+    for suffix, image in images.items():
+        restyle(image).save(out / f"{map_name}{suffix}.png", optimize=True)
+    stale = out / f"{map_name}_lower.png"
+    if "_lower" not in images and stale.exists():
+        stale.unlink()
+    meta = {
+        "map": map_name,
+        "size": size,
+        "x_min": overview.x_min,
+        "y_max": overview.y_max,
+        "units_per_pixel": overview.scale * 1024 / size,
+        "source": "valve",
+    }
+    if "_lower" in images:
+        meta["levels"] = {
+            "split_z": overview.split_z,
+            "upper": map_name,
+            "lower": f"{map_name}_lower",
+        }
+    part = out / f"{map_name}.json.part"
+    part.write_text(json.dumps(meta, indent=2) + "\n")
+    part.replace(out / f"{map_name}.json")
+
+
 def mesh_frames(whole: Walkable) -> tuple[list[tuple[str, Frame]], float | None, float]:
     """A mesh-drawn map's radars, one per storey: ([(suffix, frame)], split, share)."""
     split, share = split_height(*floor_points(whole), cell=whole.cell, min_samples=1)
@@ -261,7 +336,9 @@ __all__ = [
     "from_mesh",
     "mesh_frames",
     "meta",
+    "restyle",
     "save",
+    "save_valve",
     "shading",
     "split_height",
     "storeys",

@@ -109,3 +109,32 @@ def test_gltf_axes_become_hammer_axes() -> None:
     assert hammer / source2.UNITS_PER_METRE == pytest.approx(
         np.array([[3.0, 1.0, 2.0]])
     )
+
+
+def test_a_drawn_radar_is_checked_once_for_valves(tmp_path: Path) -> None:
+    import json
+
+    from overwatch.maps.prepare import _drawn_unchecked, _mark_checked
+
+    meta = tmp_path / "de_cache.json"
+    meta.write_text(json.dumps({"map": "de_cache", "source": "mesh"}))
+    assert _drawn_unchecked(meta)
+    _mark_checked(meta)  # the game had none: keep ours
+    assert not _drawn_unchecked(meta)
+    meta.write_text(json.dumps({"map": "de_dust2", "source": "valve"}))
+    assert not _drawn_unchecked(meta)
+
+
+def test_without_cs2_an_upgrade_is_skipped_quietly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A map that already works needs no note just because CS2 is not found."""
+    import json
+
+    monkeypatch.delenv("OVERWATCH_CS2", raising=False)
+    monkeypatch.setattr(steam, "steam_roots", lambda: iter([]))
+    (tmp_path / "de_cache.tri").write_bytes(b"")
+    (tmp_path / "de_cache.json").write_text(json.dumps({"source": "mesh"}))
+    assert prepare_map("de_cache", maps=tmp_path, radars=tmp_path) == Prepared(
+        True, True
+    )

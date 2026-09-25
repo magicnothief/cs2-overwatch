@@ -1,4 +1,10 @@
-"""Draw a top-down radar for every map in CS2CD, from where players actually walked.
+"""A top-down radar for every map: Valve's own where the game has one, else drawn.
+
+Maps with a radar in the game files (overwatch/maps/valve_radar.py) get that,
+recoloured for the page: it is the radar players know. The rest are drawn, as
+below, from where players walked or, failing that, from the collision mesh.
+
+The drawn radars, for maps CS2CD recorded, come from where players actually walked.
 
 Run:  uv run python training/rules/render_radars.py
 
@@ -47,11 +53,13 @@ from overwatch.maps.radar import (
     Frame,
     mesh_frames,
     save,
+    save_valve,
     shading,
     split_height,
     storeys,
     tidy,
 )
+from overwatch.maps.valve_radar import valve_radar
 from overwatch.parsing import load_cs2cd_cached
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -166,9 +174,10 @@ def main() -> None:
     )
     parser.add_argument(
         "--source",
-        choices=("auto", "positions", "mesh"),
+        choices=("auto", "valve", "positions", "mesh"),
         default="auto",
-        help="auto: positions where CS2CD has the map, the mesh otherwise",
+        help="auto: Valve's radar where the game has one, else positions where "
+        "CS2CD has the map, else the mesh",
     )
     parser.add_argument(
         "--compare",
@@ -189,6 +198,17 @@ def main() -> None:
             args.source == "auto" and map_name not in recorded
         )
         try:
+            if args.source in ("auto", "valve") and not args.compare:
+                found = valve_radar(map_name, args.cs2, args.work, exe=VIEWER)
+                if found is not None:
+                    images, where = found
+                    save_valve(map_name, images, where, args.out)
+                    floors = " with a lower floor" if "_lower" in images else ""
+                    print(f"{map_name}: Valve's radar{floors}", flush=True)
+                    continue
+                if args.source == "valve":
+                    print(f"{map_name}: the game has no radar for it", flush=True)
+                    continue
             if args.compare:
                 walked = from_positions(positions(map_name, paths))
                 scores = overlap(walked, mesh_walkable(map_name, args.cs2, args.work))

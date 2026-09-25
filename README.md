@@ -42,8 +42,8 @@ Then start it with `overwatch`: it opens in your browser. Nothing leaves your PC
   (30 MB). "This computer" on the first page keeps it off the graphics card, or,
   on NVIDIA, switches to CUDA (a little faster, a 600 MB download).
 - **Maps come from your own CS2.** The first demo on a map reads its collision
-  mesh from the game's files (about a minute, once per map), for line of sight
-  and the radar. CS2 is found through Steam; if it is on a drive Steam does not
+  mesh from the game's files (about a minute, once per map) for line of sight,
+  and its radar: Valve's own where the game has one, else drawn from the mesh. CS2 is found through Steam; if it is on a drive Steam does not
   list, set the folder under "This computer".
 - `overwatch setup` downloads everything up front and reports what it found.
   `overwatch analyze match.dem` reviews a demo in the terminal.

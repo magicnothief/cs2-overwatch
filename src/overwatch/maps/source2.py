@@ -88,7 +88,8 @@ def viewer(tools: Path = paths.TOOLS, progress: Progress | None = None) -> Path:
     return exe
 
 
-def _run(exe: Path, vpk: Path, out_dir: Path, file: str, *extra: str) -> str:
+def run(exe: Path, vpk: Path, out_dir: Path, file: str, *extra: str) -> str:
+    """Decompile the files matching `file` (comma-separated paths) out of a VPK."""
     # Source2Viewer writes nothing, and says nothing, when the folder is missing
     out_dir.mkdir(parents=True, exist_ok=True)
     result = subprocess.run(
@@ -102,7 +103,7 @@ def _run(exe: Path, vpk: Path, out_dir: Path, file: str, *extra: str) -> str:
 
 def export_physics(vpk: Path, out_dir: Path, *, exe: Path | None = None) -> Path:
     """The map's physics mesh, exported as glTF (.glb) into out_dir."""
-    said = _run(
+    said = run(
         exe or viewer(),
         vpk,
         out_dir,
@@ -120,7 +121,7 @@ def export_physics(vpk: Path, out_dir: Path, *, exe: Path | None = None) -> Path
 def spawns(vpk: Path, out_dir: Path, *, exe: Path | None = None) -> np.ndarray:
     """Every spawn point in the map's entities: (x, y, z) per spawn."""
     entities = f"maps/{vpk.stem}/entities/default_ents.vents_c"
-    _run(exe or viewer(), vpk, out_dir, entities)
+    run(exe or viewer(), vpk, out_dir, entities)
     text = (out_dir / entities.removesuffix("_c")).read_text(errors="replace")
     return spawn_points(text)
 
@@ -206,6 +207,7 @@ __all__ = [
     "UNITS_PER_METRE",
     "export_physics",
     "movement_mesh",
+    "run",
     "sight_triangles",
     "solid_geometry",
     "spawn_points",
