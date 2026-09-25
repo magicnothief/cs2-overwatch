@@ -621,6 +621,19 @@ function radarView(k, meta, mapName, shooter) {
   };
   const victim = pointer(k.victim_side, 5 * u);
   const attacker = pointer(k.attacker_side, 6 * u);
+  // each dot carries its player's name: colours alone mislead once teams have
+  // swapped sides, since the timeline colours players by the side they started on
+  const short = (name) => (name && name.length > 16 ? `${name.slice(0, 15)}…` : name || "");
+  const tag = (name, side, weight) => {
+    const text = add("text", { "font-size": 10.5 * u, "font-weight": weight, fill: colour(side),
+      stroke: "var(--paper)", "stroke-width": 3, "paint-order": "stroke", "stroke-linejoin": "round",
+      "vector-effect": "non-scaling-stroke" });
+    text.textContent = short(name);
+    return text;
+  };
+  const victimTag = tag(k.victim || "victim", k.victim_side, 600);
+  const attackerTag = tag(shooter || "attacker", k.attacker_side, 700);
+  const nameAt = (text, x, y) => { text.setAttribute("x", x + 9 * u); text.setAttribute("y", y - 8 * u); };
   // CS yaw: 0 along +x, counter-clockwise; the radar's y axis points down
   const place = (marker, x, y, yaw) => {
     marker.group.setAttribute("transform", `translate(${x} ${y}) rotate(${yaw == null ? 0 : -yaw})`);
@@ -662,6 +675,8 @@ function radarView(k, meta, mapName, shooter) {
       marker.group.setAttribute("opacity", faded ? 0.6 : 1);
     };
     place(attacker, ax, ay, p.yaw);
+    nameAt(attackerTag, ax, ay);
+    attackerTag.setAttribute("opacity", attackerAway ? 0.6 : 1);
     paint(attacker, k.attacker_side, attackerAway, attackerAway);
     aim(attackerCone, ax, ay, p.yaw, size * 0.3);
     attackerCone.shape.setAttribute("opacity", attackerAway ? 0.4 : 1);
@@ -669,12 +684,15 @@ function radarView(k, meta, mapName, shooter) {
     const hasVictim = p.vx != null;
     const alive = p.ms <= 0;
     victim.group.setAttribute("visibility", hasVictim ? "visible" : "hidden");
+    victimTag.setAttribute("visibility", hasVictim ? "visible" : "hidden");
     sight.setAttribute("visibility", hasVictim ? "visible" : "hidden");
     let facing = "";
     if (hasVictim) {
       const vx = X(p.vx), vy = Y(p.vy);
       // a dead player looks nowhere: after the shot, no pointer and no cone
       place(victim, vx, vy, alive ? p.vyaw : null);
+      nameAt(victimTag, vx, vy);
+      victimTag.setAttribute("opacity", victimAway ? 0.6 : 1);
       paint(victim, k.victim_side, !alive || victimAway, victimAway);
       aim(victimCone, vx, vy, alive ? p.vyaw : null, size * 0.2);
       victimCone.shape.setAttribute("opacity", victimAway ? 0.4 : 1);

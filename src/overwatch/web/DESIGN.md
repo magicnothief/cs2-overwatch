@@ -104,6 +104,10 @@ choices, brought in as a component rather than the page's frame.
   victim faces them, faces away, or is side-on. After the shot the victim is a
   hollow ring with neither: a dead player looks nowhere. Reports analysed before
   this change have no victim view, so the victim stays a plain dot.
+- **Names on the dots.** The timeline colours a player by the side they started
+  on, the radar by the side they are on that round; after the teams swap (round 9
+  in Wingman, 13 in a full match) the colours alone suggested the wrong player
+  had died. Each dot now carries its player's name, bold for the attacker.
 - **One moment drives both views.** Moving along the crosshair trace (or the
   slider, for keyboard and touch) steps both players through the approach, with
   a cursor on the trace. This is the page's one piece of motion that answers the
