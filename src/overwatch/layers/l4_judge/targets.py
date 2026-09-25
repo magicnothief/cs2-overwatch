@@ -104,12 +104,12 @@ CHECKS: list[tuple[str, bool, str, str]] = [
         ),
     ),
     (
-        "reaction_ms_min",
-        False,
+        "fast_kills",
+        True,
         "aimbot",
         (
-            "they killed {value} ms after an enemy appeared, against {base} ms "
-            "for clean players"
+            "{value} of their kills came within 50 ms of the enemy appearing, "
+            "against {base} for clean players"
         ),
     ),
     (

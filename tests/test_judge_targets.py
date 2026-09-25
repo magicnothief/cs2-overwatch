@@ -18,7 +18,7 @@ BASELINES = {
     "never_visible_share": 0.17,
     "straight_share": 0.15,
     "corrections_mean": 1.4,
-    "reaction_ms_min": 210.0,
+    "fast_kills": 0.0,
     "snap_max": 63.0,
 }
 
@@ -29,7 +29,7 @@ LINES = {
     "never_visible_share": (0.37, 0.86),
     "straight_share": (0.48, 0.67),
     "corrections_mean": (0.58, 0.25),
-    "reaction_ms_min": (15.6, 0.0),
+    "fast_kills": (1.0, 3.0),
     "snap_max": (283.0, 720.0),
 }
 
@@ -152,8 +152,8 @@ def test_no_mesh_means_no_claim_about_what_they_saw() -> None:
     assert not any("seen or heard" in reason for reason in target.reasons)
 
 
-def test_a_zero_ms_reaction_does_not_outrank_a_hard_limit() -> None:
-    case = _case(reaction_ms_min=0.0).model_copy(
+def test_fast_kills_do_not_outrank_a_hard_limit() -> None:
+    case = _case(fast_kills=5.0).model_copy(
         update={
             "rule_evidence": [
                 Evidence(
@@ -170,10 +170,14 @@ def test_a_zero_ms_reaction_does_not_outrank_a_hard_limit() -> None:
     assert "5141" in target.reasons[0]
 
 
-def test_a_fast_single_reaction_is_not_strong_evidence() -> None:
-    """A third of clean players have one kill under 100 ms: a pre-aimed angle."""
-    case = _case(reaction_ms_min=94.0, straight_share=0.14)
-    assert build_target(case, random.Random(0)).verdict is (VerdictLabel.CLEAN)
+def test_one_fast_kill_is_not_evidence() -> None:
+    """13% of clean players have one kill within 50 ms: a pre-aimed angle. Only a
+    count beyond the clean lines counts (two or more: 3.7% of clean players)."""
+    case = _case(fast_kills=1.0, straight_share=0.14)
+    assert build_target(case, random.Random(0)).verdict is VerdictLabel.CLEAN
+    notable = build_target(_case(fast_kills=2.0, straight_share=0.14), random.Random(0))
+    assert notable.verdict is not VerdictLabel.CLEAN
+    assert any("within 50 ms" in reason for reason in notable.reasons)
 
 
 def test_a_case_gets_the_same_target_in_any_order() -> None:
@@ -195,7 +199,7 @@ def test_every_cited_number_is_one_the_model_was_shown() -> None:
         "never_visible_share": 0.0417,
         "straight_share": 0.1467,
         "corrections_mean": 1.4306,
-        "reaction_ms_min": 234.375,
+        "fast_kills": 0.0,
         "snap_max": 63.41,
     }
     case = PlayerCase(
@@ -208,7 +212,7 @@ def test_every_cited_number_is_one_the_model_was_shown() -> None:
             "never_visible_share": 0.8765,
             "straight_share": 0.6849,
             "corrections_mean": 0.2449,
-            "reaction_ms_min": 0.0,
+            "fast_kills": 4.0,
             "snap_max": 1362.46,
         },
         baselines=baselines,

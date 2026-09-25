@@ -114,7 +114,7 @@ FEATURE_LABELS: dict[str, tuple[str, str]] = {
     "corrections_mean": ("aim corrections per kill", "lower"),
     "wall_aim_share": ("time aimed at an enemy they could not see", "higher"),
     "visible_share": ("time the victim was actually visible", "lower"),
-    "reaction_ms_min": ("fastest reaction after an enemy appeared (ms)", "lower"),
+    "fast_kills": ("kills within 50 ms of the enemy appearing", "higher"),
     "angle_at_first_visible_median": (
         "degrees off target the moment the enemy appeared",
         "lower",

@@ -29,12 +29,12 @@ def _case(**overrides) -> PlayerCase:
         "features": {
             "straight_share": 0.62,
             "wall_aim_share": 0.64,
-            "reaction_ms_min": 94.0,
+            "fast_kills": 2.0,
         },
         "baselines": {
             "straight_share": 0.17,
             "wall_aim_share": 0.38,
-            "reaction_ms_min": 210.0,
+            "fast_kills": 0.0,
         },
     }
     return PlayerCase(**(defaults | overrides))

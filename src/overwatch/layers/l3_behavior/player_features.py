@@ -26,6 +26,12 @@ STRAIGHT_EPS = 0.999
 #: Players with fewer kills than this are too noisy to score.
 MIN_KILLS = 5
 
+#: A kill this soon after the victim first became visible (three ticks at 64 Hz)
+#: is a "fast kill". One is common enough (13% of clean players have one); a
+#: count separates far better than the single fastest reaction: two or more
+#: fast kills in 3.7% of clean CS2CD players, 29% of banned ones, 0.3% of pros.
+FAST_REACTION_MS = 50.0
+
 #: Sniper rifles. Their share is context for a reviewer, not evidence: cheaters in
 #: CS2CD snipe far more than clean players, so sniping inflates the perception
 #: measurements on its own (ADR 0008).
@@ -38,6 +44,7 @@ PERCEPTION_COLUMNS: tuple[str, ...] = (
     "wall_aim_max",
     "reaction_ms_median",
     "reaction_ms_min",
+    "fast_kills",
     "angle_at_first_visible_median",
     "never_visible_share",
 )
@@ -105,6 +112,8 @@ def build_player_features(
         # fastest reaction the player ever produced
         "reaction_ms_median": pl.col("reaction_ms").median(),
         "reaction_ms_min": pl.col("reaction_ms").min(),
+        # how many kills came almost the instant the victim appeared
+        "fast_kills": (pl.col("reaction_ms") < FAST_REACTION_MS).sum(),
         # how close the crosshair already was the instant the victim appeared
         "angle_at_first_visible_median": pl.col("angle_at_first_visible").median(),
         # kills where the victim was never visible before dying
