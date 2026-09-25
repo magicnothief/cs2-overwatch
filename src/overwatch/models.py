@@ -26,7 +26,7 @@ from overwatch.downloads import Progress, fetch
 
 #: The Hugging Face model repo, and the commit every download is pinned to.
 MODELS_REPO = "MagicNoThief/cs2-overwatch"
-REVISION = "main"
+REVISION = "7facc6a57c164da20abe706e650da44124f68625"
 
 
 def base_url() -> str:
