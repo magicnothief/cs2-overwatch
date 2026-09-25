@@ -19,7 +19,7 @@ BASELINES = {
     "straight_share": 0.15,
     "corrections_mean": 1.4,
     "fast_kills": 0.0,
-    "snap_max": 63.0,
+    "snap_kills": 0.0,
 }
 
 
@@ -30,7 +30,7 @@ LINES = {
     "straight_share": (0.48, 0.67),
     "corrections_mean": (0.58, 0.25),
     "fast_kills": (1.0, 3.0),
-    "snap_max": (283.0, 720.0),
+    "snap_kills": (1.0, 2.0),
 }
 
 
@@ -200,7 +200,7 @@ def test_every_cited_number_is_one_the_model_was_shown() -> None:
         "straight_share": 0.1467,
         "corrections_mean": 1.4306,
         "fast_kills": 0.0,
-        "snap_max": 63.41,
+        "snap_kills": 0.0,
     }
     case = PlayerCase(
         match_id="m",
@@ -213,7 +213,7 @@ def test_every_cited_number_is_one_the_model_was_shown() -> None:
             "straight_share": 0.6849,
             "corrections_mean": 0.2449,
             "fast_kills": 4.0,
-            "snap_max": 1362.46,
+            "snap_kills": 4.0,
         },
         baselines=baselines,
         clean_lines=LINES,

@@ -119,7 +119,11 @@ FEATURE_LABELS: dict[str, tuple[str, str]] = {
         "degrees off target the moment the enemy appeared",
         "lower",
     ),
-    "snap_max": ("fastest turn on a kill tick (deg/s)", "higher"),
+    "snap_kills": ("kills with a turn over 200 deg/s on the kill tick", "higher"),
+    "arrival_shot_share": (
+        "kills fired on the very tick the crosshair reached the head",
+        "higher",
+    ),
     "zero_motion_share": ("ticks with the crosshair perfectly still", "higher"),
     "never_visible_share": ("kills where the victim was never visible first", "higher"),
     # context, not evidence: sniping inflates several measurements on its own

@@ -113,12 +113,21 @@ CHECKS: list[tuple[str, bool, str, str]] = [
         ),
     ),
     (
-        "snap_max",
+        "snap_kills",
         True,
         "aimbot",
         (
-            "they turned {value} deg/s on the tick a kill landed, against "
-            "{base} for clean players"
+            "{value} of their kills came with a turn over 200 deg/s on the kill "
+            "tick, against {base} for clean players"
+        ),
+    ),
+    (
+        "arrival_shot_share",
+        True,
+        "triggerbot",
+        (
+            "{value} of their kills were fired on the very tick the crosshair "
+            "reached the head, against {base} for clean players"
         ),
     ),
 ]
