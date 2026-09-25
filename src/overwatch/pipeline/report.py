@@ -33,6 +33,7 @@ class RadarPoint(BaseModel):
     vx: float | None = None
     vy: float | None = None
     vz: float | None = None
+    vyaw: float | None = Field(default=None, description="where the victim looked")
     visible: bool = Field(description="could the attacker see the victim")
 
 

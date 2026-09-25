@@ -94,7 +94,16 @@ choices, brought in as a component rather than the page's frame.
   edge is the wall line. Drawn offline by `training/rules/render_radars.py`.
 - **Team colours finally carry meaning here**: each player's trail, in the side
   they were on at that kill. The sightline is graphite: solid when they could see
-  each other, dashed through a wall. The attacker's view is a faint wedge.
+  each other, dashed through a wall.
+- **Who looks where** (reworked 2026-09-26, after "make it clearer which player
+  is looking in which direction"): each player is a teardrop pointing along
+  their view, one shape with one outline so the point reads at a glance, and
+  carries a cone of view that fades with distance like a torch beam, in their
+  side's colour (the attacker's stronger and longer). The caption says it in
+  words: how many degrees the attacker's view is off the victim, and whether the
+  victim faces them, faces away, or is side-on. After the shot the victim is a
+  hollow ring with neither: a dead player looks nowhere. Reports analysed before
+  this change have no victim view, so the victim stays a plain dot.
 - **One moment drives both views.** Moving along the crosshair trace (or the
   slider, for keyboard and touch) steps both players through the approach, with
   a cursor on the trace. This is the page's one piece of motion that answers the

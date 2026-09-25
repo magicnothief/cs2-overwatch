@@ -380,6 +380,7 @@ def radar_tracks(window_ticks: pl.DataFrame, ticks: pl.DataFrame) -> pl.DataFram
         vx=pl.col("x"),
         vy=pl.col("y"),
         vz=pl.col("z"),
+        vyaw=pl.col("yaw"),
         vteam=pl.col("team"),
     )
     return (
@@ -429,6 +430,7 @@ def _path(tracks: pl.DataFrame, window_uid: str) -> tuple[list[RadarPoint], dict
             vx=r["vx"],
             vy=r["vy"],
             vz=r["vz"],
+            vyaw=r["vyaw"],
             visible=bool(r["target_visible"]),
         )
         for r in rows

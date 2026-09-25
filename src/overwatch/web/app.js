@@ -278,7 +278,7 @@ async function report(id, params) {
   const fresh = view.dataset.report !== id;
   view.dataset.report = id;
   const detail = el("section", { class: "detail" },
-    el("div", {}, kill ? killDetail(kill, radar, data.map_name) : el("p", { class: "muted" }, "This player has no kills to show.")),
+    el("div", {}, kill ? killDetail(kill, radar, data.map_name, player.name || player.player_id) : el("p", { class: "muted" }, "This player has no kills to show.")),
     player ? playerPanel(player, data) : null);
   // choosing another kill in the same report keeps the timeline as it is: rebuilt,
   // every ring would be laid out again and the lanes' sideways scroll would reset
@@ -455,7 +455,7 @@ function timeline(data, players, selected, kill, animate) {
       el("span", { style: "color:var(--t);font-weight:600" }, "T"), ".", switchText));
 }
 
-function killDetail(k, radarMeta, mapName) {
+function killDetail(k, radarMeta, mapName, shooter) {
   const facts = [];
   const what = [weapon(k.weapon), k.headshot ? "headshot" : null].filter(Boolean).join(" ");
   if (k.distance != null) facts.push(`${Math.round(k.distance)} m away${k.walls_penetrated ? `, through ${k.walls_penetrated === 1 ? "a wall" : `${k.walls_penetrated} walls`}` : ""}.`);
@@ -473,7 +473,7 @@ function killDetail(k, radarMeta, mapName) {
   });
 
   const chart = trace(k.trajectory);
-  const map = radarView(k, radarMeta, mapName);
+  const map = radarView(k, radarMeta, mapName, shooter);
   const moments = k.path.map((p) => p.ms);
   const shot = Math.max(0, moments.indexOf(0));
   const show = (i) => { map.show(i); chart.cursor?.(moments[i]); };
@@ -501,16 +501,19 @@ function killDetail(k, radarMeta, mapName) {
 }
 
 /**
- * The kill from above: both players' trails through the approach, the attacker's
- * view, and the line between them (solid when they could see each other, dashed
- * through a wall), on the map drawn from where players walk (render_radars.py).
- * show(i) moves everything to the i-th moment of the path.
+ * The kill from above: both players' trails through the approach, where each of
+ * them is looking (a pointer on the dot, and a cone of view in their side's
+ * colour), and the line between them (solid when they could see each other,
+ * dashed through a wall), on the map drawn from where players walk
+ * (render_radars.py). show(i) moves everything to the i-th moment of the path.
  *
  * Stacked maps (Nuke, Vertigo) have a radar per floor. The one shown is where the
  * attacker stood at the shot; a toggle switches, and whatever is on the other
  * floor (a player, a stretch of trail) is drawn faded.
  */
-function radarView(k, meta, mapName) {
+let radarCount = 0;
+
+function radarView(k, meta, mapName, shooter) {
   const NS = "http://www.w3.org/2000/svg";
   const path = k.path || [];
   const slider = el("input", { type: "range", min: 0, max: Math.max(0, path.length - 1), step: 1,
@@ -538,7 +541,8 @@ function radarView(k, meta, mapName) {
   const xs = path.flatMap((p) => [X(p.ax), p.vx == null ? null : X(p.vx)]).filter((v) => v != null);
   const ys = path.flatMap((p) => [Y(p.ay), p.vy == null ? null : Y(p.vy)]).filter((v) => v != null);
   const MIN_VIEW = 1400 / upp; // at least ~35 m across
-  const size = Math.max(MIN_VIEW, Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) * 1.35;
+  // room around both players for their cones of view
+  const size = Math.max(MIN_VIEW, Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) * 1.5;
   const cx = (Math.max(...xs) + Math.min(...xs)) / 2, cy = (Math.max(...ys) + Math.min(...ys)) / 2;
   svg.setAttribute("viewBox", `${cx - size / 2} ${cy - size / 2} ${size} ${size}`);
   const u = size / 340; // one screen pixel, roughly, at the usual panel width
@@ -577,10 +581,65 @@ function radarView(k, meta, mapName) {
     for (const s of stretches) s.node.setAttribute("opacity", s.on && levels && s.on !== floor ? s.opacity * 0.3 : s.opacity);
     for (const b of buttons) b.setAttribute("aria-pressed", String(b.dataset.floor === floor));
   };
-  const wedge = add("path", { fill: "var(--graphite)", opacity: 0.06 });
+  // where each player looks: a cone of view that fades with distance, like a torch
+  // beam, in their side's colour (the attacker's stronger), and a pointer on the dot
+  const radarId = `radar${++radarCount}`;
+  const defs = add("defs", {});
+  const cone = (who, side, strength) => {
+    const beam = document.createElementNS(NS, "radialGradient");
+    beam.id = `${radarId}-${who}`;
+    beam.setAttribute("gradientUnits", "userSpaceOnUse");
+    for (const [offset, opacity] of [[0, strength], [1, 0]]) {
+      const stop = document.createElementNS(NS, "stop");
+      stop.setAttribute("offset", offset);
+      stop.setAttribute("style", `stop-color:${colour(side)};stop-opacity:${opacity}`);
+      beam.append(stop);
+    }
+    defs.append(beam);
+    return { beam, shape: add("path", { fill: `url(#${beam.id})` }) };
+  };
+  const victimCone = cone("victim", k.victim_side, 0.26);
+  const attackerCone = cone("attacker", k.attacker_side, 0.34);
   const sight = add("line", { stroke: "var(--graphite)", "stroke-width": 1.75, "vector-effect": "non-scaling-stroke" });
-  const victim = add("circle", { r: 4.5 * u, fill: colour(k.victim_side), stroke: "var(--paper)", "stroke-width": 1.5, "vector-effect": "non-scaling-stroke" });
-  const attacker = add("circle", { r: 5.5 * u, fill: colour(k.attacker_side), stroke: "var(--paper)", "stroke-width": 1.5, "vector-effect": "non-scaling-stroke" });
+  // a player is a teardrop pointing where they look (one shape, one outline, so the
+  // point reads at a glance), or a plain dot when their view is not known
+  const pointer = (side, r) => {
+    const group = add("g", {});
+    const a = (40 * Math.PI) / 180, tip = 2.5 * r;
+    const style = { stroke: "var(--paper)", "stroke-width": 1.5, "stroke-linejoin": "round",
+      "vector-effect": "non-scaling-stroke" };
+    const make = (tag, attrs) => {
+      const node = document.createElementNS(NS, tag);
+      for (const [key, value] of Object.entries({ ...style, ...attrs })) node.setAttribute(key, value);
+      group.append(node);
+      return node;
+    };
+    const nose = make("path", { d: `M${tip},0 L${r * Math.cos(a)},${r * Math.sin(a)} ` +
+      `A${r},${r} 0 1 1 ${r * Math.cos(a)},${-r * Math.sin(a)} Z` });
+    const dot = make("circle", { r });
+    return { group, nose, dot, side };
+  };
+  const victim = pointer(k.victim_side, 5 * u);
+  const attacker = pointer(k.attacker_side, 6 * u);
+  // CS yaw: 0 along +x, counter-clockwise; the radar's y axis points down
+  const place = (marker, x, y, yaw) => {
+    marker.group.setAttribute("transform", `translate(${x} ${y}) rotate(${yaw == null ? 0 : -yaw})`);
+    marker.nose.setAttribute("visibility", yaw == null ? "hidden" : "visible");
+    marker.dot.setAttribute("visibility", yaw == null ? "visible" : "hidden");
+  };
+  const aim = (c, x, y, yaw, reach) => {
+    if (yaw == null) return c.shape.setAttribute("visibility", "hidden");
+    const half = (45 * Math.PI) / 180, t0 = (yaw * Math.PI) / 180;
+    const pt = (t) => `${x + reach * Math.cos(t)},${y - reach * Math.sin(t)}`;
+    c.shape.setAttribute("visibility", "visible");
+    c.shape.setAttribute("d", `M${x},${y} L${pt(t0 - half)} A${reach},${reach} 0 0,0 ${pt(t0 + half)} Z`);
+    c.beam.setAttribute("cx", x); c.beam.setAttribute("cy", y); c.beam.setAttribute("r", reach);
+  };
+  // how far a view points from the other player, 0-180 degrees
+  const offBy = (yaw, fx, fy, tx, ty) => {
+    const bearing = (Math.atan2(ty - fy, tx - fx) * 180) / Math.PI;
+    return Math.abs(((yaw - bearing + 540) % 360) - 180);
+  };
 
   // a 10 m scale bar, bottom left
   const metre = 39.37 / upp;
@@ -593,38 +652,52 @@ function radarView(k, meta, mapName) {
   const show = (i) => {
     const p = path[Math.max(0, Math.min(path.length - 1, i))];
     const ax = X(p.ax), ay = Y(p.ay);
-    attacker.setAttribute("cx", ax); attacker.setAttribute("cy", ay);
     const attackerAway = away(p.az), victimAway = p.vx != null && away(p.vz);
     // on the other floor: hollow and faded
-    attacker.setAttribute("fill", attackerAway ? "var(--paper)" : colour(k.attacker_side));
-    attacker.setAttribute("stroke", attackerAway ? colour(k.attacker_side) : "var(--paper)");
-    attacker.setAttribute("opacity", attackerAway ? 0.6 : 1);
-    victim.setAttribute("opacity", victimAway ? 0.6 : 1);
+    const paint = (marker, side, hollow, faded) => {
+      for (const shape of [marker.nose, marker.dot]) {
+        shape.setAttribute("fill", hollow ? "var(--paper)" : colour(side));
+        shape.setAttribute("stroke", hollow ? colour(side) : "var(--paper)");
+      }
+      marker.group.setAttribute("opacity", faded ? 0.6 : 1);
+    };
+    place(attacker, ax, ay, p.yaw);
+    paint(attacker, k.attacker_side, attackerAway, attackerAway);
+    aim(attackerCone, ax, ay, p.yaw, size * 0.3);
+    attackerCone.shape.setAttribute("opacity", attackerAway ? 0.4 : 1);
     sight.setAttribute("opacity", attackerAway && victimAway ? 0.35 : 1);
     const hasVictim = p.vx != null;
-    victim.setAttribute("visibility", hasVictim ? "visible" : "hidden");
+    const alive = p.ms <= 0;
+    victim.group.setAttribute("visibility", hasVictim ? "visible" : "hidden");
     sight.setAttribute("visibility", hasVictim ? "visible" : "hidden");
+    let facing = "";
     if (hasVictim) {
       const vx = X(p.vx), vy = Y(p.vy);
-      victim.setAttribute("cx", vx); victim.setAttribute("cy", vy);
-      const hollow = p.ms > 0 || victimAway;
-      victim.setAttribute("fill", hollow ? "var(--paper)" : colour(k.victim_side));
-      victim.setAttribute("stroke", hollow ? colour(k.victim_side) : "var(--paper)");
+      // a dead player looks nowhere: after the shot, no pointer and no cone
+      place(victim, vx, vy, alive ? p.vyaw : null);
+      paint(victim, k.victim_side, !alive || victimAway, victimAway);
+      aim(victimCone, vx, vy, alive ? p.vyaw : null, size * 0.2);
+      victimCone.shape.setAttribute("opacity", victimAway ? 0.4 : 1);
       sight.setAttribute("x1", ax); sight.setAttribute("y1", ay);
       sight.setAttribute("x2", vx); sight.setAttribute("y2", vy);
       sight.setAttribute("stroke-dasharray", p.visible ? "" : "5 4");
-    }
-    if (p.yaw != null) {
-      // CS yaw: 0 along +x, counter-clockwise; the radar's y axis points down
-      const reach = size * 0.3, half = (45 * Math.PI) / 180, yaw = (p.yaw * Math.PI) / 180;
-      const pt = (a) => `${ax + reach * Math.cos(a)},${ay - reach * Math.sin(a)}`;
-      wedge.setAttribute("d", `M${ax},${ay} L${pt(yaw - half)} A${reach},${reach} 0 0,0 ${pt(yaw + half)} Z`);
+      if (alive && p.yaw != null) {
+        const off = Math.round(offBy(p.yaw, p.ax, p.ay, p.vx, p.vy));
+        facing += ` ${shooter || "The attacker"} looks ${off}° off them`;
+        if (p.vyaw != null) {
+          const back = offBy(p.vyaw, p.vx, p.vy, p.ax, p.ay);
+          facing += `; ${who} ${back < 45 ? "faces them" : back > 100 ? "faces away" : "is side-on to them"}`;
+        }
+        facing += ".";
+      }
+    } else {
+      aim(victimCone, 0, 0, null, 0);
     }
     slider.value = i;
     const when = p.ms === 0 ? "At the shot" : p.ms < 0 ? `${(-p.ms / 1000).toFixed(2).replace(/0$/, "")} s before the shot` : `${(p.ms / 1000).toFixed(2).replace(/0$/, "")} s after`;
     const other = floor === "upper" ? "lower" : "upper";
     const elsewhere = attackerAway && victimAway ? "Both are" : attackerAway ? "The attacker is" : victimAway ? `${who} is` : null;
-    caption.textContent = `${when}: ${who} ${p.visible ? "in sight" : "behind cover"}.` +
+    caption.textContent = `${when}: ${who} ${p.visible ? "in sight" : "behind cover"}.` + facing +
       (elsewhere ? ` ${elsewhere} on the ${other} floor.` : "") +
       (meta ? "" : ` No radar for ${mapName || "this map"}, so positions only.`);
   };

@@ -179,3 +179,17 @@ def test_the_timeline_has_every_kill_in_its_round(
         assert kill.trajectory  # the detail panel draws this
     assert all(p.side in {"CT", "T"} for p in report.players)
     assert messages == ["layer 1", "layer 2", "layer 3"]  # no judge, no layer 4 line
+
+
+def test_the_radar_knows_where_both_players_look(
+    match: ParsedMatch, tmp_path: Path
+) -> None:
+    """Each moment of a kill's approach carries both players' position, height and
+    view direction: the radar draws who faces where, and on which floor."""
+    report = analyze_match(match, "fixture", scorer=Scorer(_bundle(tmp_path / "s.pt")))
+    points = [q for p in report.players for k in p.kill_log for q in k.path]
+    assert points
+    with_victim = [q for q in points if q.vx is not None]
+    assert with_victim
+    assert all(q.yaw is not None and q.az is not None for q in points)
+    assert all(q.vyaw is not None and q.vz is not None for q in with_victim)
