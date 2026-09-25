@@ -22,9 +22,13 @@ from overwatch.settings import load_settings
 
 
 def _progress(message: str) -> None:
-    """One line that updates in place while a download runs."""
+    """One line that updates in place while a download runs.
+
+    Padded with spaces rather than cleared with an escape code, which the older
+    Windows console prints as garbage.
+    """
     end = "" if message.endswith("%") else "\n"
-    print(f"\r\033[K  {message}", end=end, flush=True)
+    print(f"\r  {message}".ljust(72), end=end, flush=True)
 
 
 def fetch_models(*, judge: bool) -> bool:
