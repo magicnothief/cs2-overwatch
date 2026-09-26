@@ -71,3 +71,12 @@ def test_anything_else_is_refused(tmp_path: Path) -> None:
         with pytest.raises(ValueError, match="not a CS2 demo"):
             demos.unpack(bad, tmp_path / "out.dem")
         assert not (tmp_path / "out.dem").exists()
+
+
+def test_a_cut_off_archive_leaves_nothing_behind(tmp_path: Path) -> None:
+    whole = gzip.compress(demos.DEMO_MAGIC + bytes(range(256)) * 400)
+    cut = tmp_path / "cut.dem.gz"
+    cut.write_bytes(whole[: len(whole) // 2])
+    with pytest.raises(EOFError):
+        demos.unpack(cut, tmp_path / "out.dem")
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["cut.dem.gz"]

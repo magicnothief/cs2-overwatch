@@ -119,14 +119,19 @@ def unpack(source: Path, dest: Path) -> Path:
     else:
         opener = {"gz": gzip.open, "bz2": bz2.open, "zst": _zstd_open}[kind]
         part = dest.with_suffix(".part")
-        with opener(source, "rb") as packed, part.open("wb") as out:
-            shutil.copyfileobj(packed, out, 1 << 20)
+        try:
+            with opener(source, "rb") as packed, part.open("wb") as out:
+                shutil.copyfileobj(packed, out, 1 << 20)
+        except BaseException:  # a cut-off or corrupt archive leaves no .part behind
+            part.unlink(missing_ok=True)
+            raise
         part.replace(dest)
     with dest.open("rb") as fh:
-        if fh.read(len(DEMO_MAGIC)) != DEMO_MAGIC:
-            dest.unlink(missing_ok=True)
-            msg = "That is not a CS2 demo (.dem from CS2)"
-            raise ValueError(msg)
+        head = fh.read(len(DEMO_MAGIC))
+    if head != DEMO_MAGIC:  # closed first: Windows won't delete an open file
+        dest.unlink(missing_ok=True)
+        msg = "That is not a CS2 demo (.dem from CS2)"
+        raise ValueError(msg)
     return dest
 
 
