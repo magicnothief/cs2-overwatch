@@ -67,6 +67,32 @@ Respect site ToS and rate limits.
   negatives for Layer 3, and as "impressive but clean" examples for the Layer 4 judge.
 - **Caveat:** pros aren't your target population (matchmaking players). LAN pro demos are
   also cleaner than online play.
+- **Caveat, measured 2026-09-26:** pros are *not* uniformly cleaner than CS2CD's clean players.
+  Their pooled arrival-shot rate is 9.64% against CS2CD clean's 6.7555% (2,500 eligible arrival
+  kills over 278 pros, against 21,982 over 2,554 clean players), because they hold pre-aimed
+  angles and fire the tick an enemy steps into the crosshair. A line drawn at the CS2CD clean
+  95th percentile therefore puts *more* than 5% of pros past it on that measurement, whatever
+  estimator sits on top. Check the direction of the shift per measurement before treating pros
+  as a false-positive proxy. See `docs/evals/2026-09-26-arrival-redesign.md` section 3.
+- **Sample size, measured 2026-09-26:** the 35-match `--per-map 5 --seed 0` pro check yields 341
+  players, and a measurement withheld below a minimum kill count reaches far fewer — 117 for one
+  candidate. 1 of 117 has a 95% confidence interval of [0.0216%, 4.6701%]. A gate written as
+  "at most 1% of pros" needs **299 shown pros with no hits** to be demonstrable at 95%
+  confidence, so it needs roughly `--per-map 25` (175 matches) or more. The 1,988-demo listing
+  is cached at `data/processed/pro_check/listing.json` and supports it.
+
+### Arrival tables (derived, 2026-09-26)
+- **What:** every crosshair arrival at or before a kill's opening shot, with the crosshair's own
+  angular step on that tick, so an arrival definition can be changed without reparsing.
+  `data/processed/arrival_lab.parquet` (CS2CD, 110,658 rows over 91,128 kill windows) and
+  `data/processed/pro_arrival_lab/` (pro sample, one parquet per demo).
+- **Built by:** `training/arrival/arrival_lab.py` and `training/arrival/pro_arrival_lab.py`.
+  Both self-check: the CS2CD table rebuilds `shots.arrival_features` exactly, and the pro table
+  reproduces all 341 pros' `arrival_kills` and `arrival_shots` as the v5 judge run saw them,
+  0 mismatches.
+- **Why:** gate 3 of `docs/specs/2026-09-26-triggerbot-and-snap-count.md` is a feature-level
+  check. It needs no judge and no GPU, and at ~15 s a demo a fresh pro sample is minutes, not
+  hours. Regenerate rather than trust a stale copy — neither file is in git.
 
 ## C. Vision (Layer 2 `vision/` backend, optional)
 
