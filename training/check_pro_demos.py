@@ -83,12 +83,18 @@ def sample(per_map: int, seed: int) -> list[str]:
 
 
 def run(
-    demos: list[str], *, out: Path, model: Path, keep: bool, gpu_layers: int | str
+    demos: list[str],
+    *,
+    out: Path,
+    model: Path,
+    keep: bool,
+    gpu_layers: int | str,
+    scorer_path: Path | None = None,
 ) -> None:
     from huggingface_hub import hf_hub_download
 
     chosen = load_settings()
-    scorer = Scorer()
+    scorer = Scorer(scorer_path) if scorer_path else Scorer()
     judge = Judge(model, gpu_layers=gpu_layers, prefer_cuda=chosen.prefer_cuda)
     print(f"judge: {model.name} on {judge.describe()}", flush=True)
     raw = paths.DATA / "raw" / "hltv"
@@ -123,6 +129,58 @@ def run(
             flush=True,
         )
     judge.close()
+
+
+#: One measurement as the evidence text renders it:
+#: "- <description>: <value> (clean <base>; 95% of clean players are below <a>, 99% below <b>)"
+MEASUREMENT = re.compile(
+    r"^- (?P<name>.+?): (?P<value>-?[\d.]+) \(clean (?P<base>-?[\d.]+); "
+    r"95% of clean players are (?P<side>below|above) (?P<notable>-?[\d.]+), "
+    r"99% \w+ (?P<strong>-?[\d.]+)\)$",
+    re.MULTILINE,
+)
+
+
+def report_lines(players: list[tuple[dict, dict]]) -> None:
+    """How many pros each clean line puts past it, measurement by measurement.
+
+    Read from the evidence the judge was given, so these are the very figures and
+    lines it saw. A measurement the evidence withholds (too few kills for it to
+    mean anything) counts in neither column: `shown` is the denominator that
+    matters, `of all` the one a spec may be written against.
+    """
+    counts: dict[str, list[int]] = defaultdict(lambda: [0, 0, 0])
+    edges: dict[str, tuple[str, str]] = {}
+    for _, player in players:
+        for found in MEASUREMENT.finditer(player.get("judge_evidence") or ""):
+            value, notable, strong = (
+                float(found["value"]),
+                float(found["notable"]),
+                float(found["strong"]),
+            )
+            past = (
+                (lambda a, b: a > b)
+                if found["side"] == "below"
+                else (lambda a, b: a < b)
+            )
+            row = counts[found["name"]]
+            row[0] += 1
+            row[1] += past(value, notable)
+            row[2] += past(value, strong)
+            edges[found["name"]] = (found["notable"], found["strong"])
+    if not counts:
+        print("\nno measurements in the evidence: are these reports from this build?")
+        return
+    n = len(players)
+    print(f"\npros past the clean lines (of {n} players; 95%/99% lines in brackets):")
+    for name, (shown, notable, strong) in sorted(counts.items()):
+        line = edges[name]
+        print(
+            f"  {name}: [{line[0]} / {line[1]}]  shown to {shown}; "
+            f"past 95% {notable} ({notable / shown:.2%} of shown, "
+            f"{notable / n:.2%} of all), past 99% {strong} "
+            f"({strong / shown:.2%} of shown, {strong / n:.2%} of all)"
+        )
 
 
 def summarise(out: Path) -> None:
@@ -167,6 +225,7 @@ def summarise(out: Path) -> None:
         f"       clean    {share(verdicts['clean'])}\n"
         f"       no answer {verdicts['none']}"
     )
+    report_lines(players)
     per_map = defaultdict(lambda: [0, 0, 0])
     for r, p in players:
         row = per_map[r["map_name"]]
@@ -206,6 +265,14 @@ def main() -> None:
         "--out", type=Path, default=OUT, help="where reports go (one folder per run)"
     )
     parser.add_argument("--model", type=Path, default=DEFAULT_MODEL, help="judge GGUF")
+    parser.add_argument(
+        "--scorer",
+        type=Path,
+        default=None,
+        help="detector bundle to read the clean reference from (scorer.onnx with "
+        "scorer.json beside it); the installed one by default. A judge trained on "
+        "new evidence needs the reference that names the same measurements",
+    )
     args = parser.parse_args()
     if not args.summary:
         gpu = args.gpu_layers if args.gpu_layers == "auto" else int(args.gpu_layers)
@@ -215,6 +282,7 @@ def main() -> None:
             model=args.model,
             keep=args.keep,
             gpu_layers=gpu,
+            scorer_path=args.scorer,
         )
     summarise(args.out)
 

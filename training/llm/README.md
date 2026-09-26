@@ -91,6 +91,46 @@ uv run python training/llm/evaluate_judge.py --model models/llm/<your>.gguf --li
 answers to cases by match and player. Per-case answers are in
 `data/processed/judge_eval_*.jsonl`. RTX 3060.
 
+**v5 was not shipped.** Evaluated 2026-09-26 against the three gates in
+`docs/specs/2026-09-26-triggerbot-and-snap-count.md` section 4; full report in
+`docs/evals/2026-09-26-judge-v5-ship-gates.md`. On `Qwen3.5-4B.Q4_K_M.gguf`,
+llama.cpp b11177 on Vulkan, 206 validation cases (`judge_training_v5/`):
+
+| measure | v4 | v5 |
+|---|---|---|
+| matches the target | 92.2% | 94.2% |
+| calls clean players cheaters | 2.8% | 3.7% |
+| calls banned players cheaters | 28.6% | 37.8% |
+| answers "unclear" | 26% | 22% |
+| probability ROC-AUC | 0.779 | 0.795 |
+| follows the evidence | 0.95 | 0.97 |
+| leans on the behaviour score | 0.13 | 0.31 |
+| invented numbers | 0 | 0 |
+| speed | 2.2 s/case | 1.9 s/case |
+
+Gate 1 passed (94.2% target match, 0 invented, and all four accused
+clean-labelled players have targets that themselves say cheating). Gates 2 and 3
+failed on the 35-match pro check (`data/processed/pro_check_v5/`, 341 players):
+v5 accused 1 pro where the threshold is 0, answered "unclear" for 8.5% against
+v4's 6.7%, and put 6.45% of pros past `arrival_shot_share`'s 95% line against a
+1% ceiling.
+
+The lesson is about the measurement, not the model. `arrival_shot_share` divides
+by `arrival_kills`, whose median is 8 and 25th percentile 6 across the 3,229
+eligible CS2CD players. The 0.25 line falls between one and two arrival shots for
+anyone with 5-7 eligible kills, so **16 of the 22 pros past the line are there on
+exactly 2 kills**, and 55% of the clean CS2CD players past it sit on 2 against
+11.7% of the cheaters. That is the `snap_max` flaw the v5 spec set out to remove
+("one kill decides a player's maximum") reappearing as two-kills-decide.
+`snap_kills`, at lines `[1.0, 2.0]`, has the same defect and was the sole reason
+the one pro was accused. Raise the eligibility floor or use an interval-based
+statistic before retraining; a retrain cannot fix a line that is wrong at these
+denominators.
+
+Note on the older runs below: `data/processed/pro_check/` is the **v3** pro run
+(5 unclear of 341, 1.5%), not v4. v4's pro reports were not kept, so v4's 6.7%
+survives only as the number quoted here.
+
 **v4 against v3** (2026-09-26), 206 validation cases on the evidence text with
 fast kills counted (`judge_training_fastkills/`), prebuilt llama-server on Vulkan:
 
