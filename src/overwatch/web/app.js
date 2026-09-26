@@ -67,8 +67,9 @@ async function home() {
   const status = await api("/api/status").catch(() => null);
   const reports = await api("/api/reports").catch(() => []);
   const machine = await api("/api/settings").catch(() => null);
+  const local = await api("/api/demos").catch(() => null);
 
-  const input = el("input", { type: "file", accept: ".dem", hidden: true });
+  const input = el("input", { type: "file", accept: ".dem,.gz,.bz2,.zst", hidden: true });
   const judgeChoice = (value, label, checked) =>
     el("label", {}, el("input", { type: "radio", name: "judge", value, checked }), " ", label);
 
@@ -140,9 +141,63 @@ async function home() {
       )
     : el("p", { class: "muted" }, "Reviews you run appear here.");
 
+  const judgeChosen = () => zone.querySelector("input[name=judge]:checked").value;
   view.replaceChildren(status?.update ? updateNotice(status) : "", zone,
+    local ? localDemos(local, judgeChosen) : "",
     el("h2", {}, "Earlier reviews"), el("div", { style: "margin-top:1rem" }, history),
     machine ? settingsPanel(machine) : "");
+}
+
+/** Demos already on this PC (CS2's replays folder, Downloads), reviewed where they lie. */
+function localDemos(local, judgeChosen) {
+  const size = (bytes) => `${Math.round(bytes / 1e6)} MB`;
+  const start = async (d, button) => {
+    button.disabled = true;
+    button.textContent = "Starting";
+    const res = await fetch("/api/analyses/local", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ folder: d.folder, name: d.name, judge: judgeChosen() }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) return failed(d.name, body.detail || res.statusText);
+    location.hash = `#/job/${body.id}`;
+  };
+  const where = { cs2: "CS2", downloads: "Downloads" };
+  const list = local.demos.length
+    ? el("table", { class: "history local" },
+        el("thead", {}, el("tr", {},
+          el("th", {}, "Map"), el("th", {}, "Demo"), el("th", {}, "In"), el("th", {}, "Saved"),
+          el("th", { class: "num" }, "Size"), el("th", {}, ""))),
+        el("tbody", {}, local.demos.map((d) => {
+          const action = d.reviewed
+            ? el("a", { href: `#/report/${d.report_id}` }, "Open review")
+            : el("button", { type: "button", class: "quiet small" }, "Review");
+          if (!d.reviewed) action.addEventListener("click", () => start(d, action));
+          return el("tr", {},
+            el("td", { class: "map" }, (d.map || "").replace(/^de_|^cs_|^ar_/, "") || "–"),
+            el("td", { class: "file" }, d.name),
+            el("td", { class: "muted" }, where[d.folder] || d.folder),
+            el("td", { class: "muted" }, timeAgo(d.modified)),
+            el("td", { class: "num muted" }, size(d.size)),
+            el("td", {}, action));
+        })))
+    : el("p", { class: "muted" }, Object.keys(local.folders).length
+        ? "No demos in CS2's replays folder or in Downloads yet."
+        : "Set your CS2 folder under This computer to see the demos you download in CS2.");
+  return el("section", { class: "local-demos", "aria-labelledby": "local-title" },
+    el("h2", { id: "local-title" }, "Demos on this PC"),
+    el("div", { style: "margin-top:1rem" }, list),
+    el("details", { class: "guide" },
+      el("summary", {}, "How to get a demo"),
+      el("dl", {},
+        el("dt", {}, "Matchmaking, Premier, Wingman"),
+        el("dd", {}, "In CS2, open Watch, then Your Matches, and press the download arrow on a match. ",
+          "It lands in CS2's replays folder and shows up in the list above. Valve keeps a match's demo for about a month."),
+        el("dt", {}, "FACEIT and other services"),
+        el("dd", {}, "Download the demo from the match page and drop the file here as it comes (.dem, .dem.gz, .dem.bz2 or .dem.zst), ",
+          "or leave it in Downloads and pick it from the list."),
+        el("dt", {}, "HLTV and tournaments"),
+        el("dd", {}, "Download the match archive, extract it, and drop the .dem of the map you want."))));
 }
 
 /** A newer release is out: what it is, where its notes are, how to install it. */

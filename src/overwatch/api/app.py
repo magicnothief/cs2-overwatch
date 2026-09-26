@@ -15,6 +15,7 @@ hash, so the name a browser sends is only ever displayed, never used as a path.
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 import os
@@ -26,9 +27,18 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from overwatch import paths, updates
 from overwatch.api.jobs import Runner
+from overwatch.demos import (
+    DEMO_MAGIC,
+    demo_folders,
+    list_demos,
+    packing,
+    resolve,
+    unpack,
+)
 from overwatch.layers.l4_judge.server import nvidia_cuda_major
 from overwatch.maps.steam import find_cs2_maps, maps_folder
 from overwatch.settings import Settings, save_settings
@@ -37,10 +47,43 @@ WEB = Path(__file__).resolve().parents[1] / "web"
 
 #: Competitive demos run 50-150 MB, tournament ones up to ~500 MB.
 MAX_DEMO_BYTES = 2 * 1024**3
-#: Every CS2 demo starts with these bytes; CS:GO demos ("HL2DEMO") do not parse.
-DEMO_MAGIC = b"PBDEMS2\x00"
 _REPORT_ID = re.compile(r"^[A-Za-z0-9_.-]+$")
 _MAP_NAME = re.compile(r"^[a-z0-9_]+$")
+
+
+class LocalChoice(BaseModel):
+    folder: str
+    name: str
+    judge: str = "flagged"
+
+
+def _stem(name: str) -> str:
+    """A demo's report id: its name without the demo endings."""
+    for suffix in (".gz", ".bz2", ".zst", ".dem"):
+        name = name.removesuffix(suffix)
+    return name
+
+
+@functools.lru_cache(maxsize=256)
+def _header_map(path: str, modified: float) -> str | None:
+    try:
+        from demoparser2 import DemoParser
+
+        return DemoParser(path).parse_header().get("map_name") or None
+    except KeyboardInterrupt:
+        raise
+    except BaseException:  # noqa: BLE001 - a truncated demo panics in the parser
+        return None
+
+
+def _map_of(path: Path) -> str | None:
+    """The map a plain demo was played on, from its header (cached)."""
+    if not path.name.endswith(".dem"):
+        return None
+    try:
+        return _header_map(str(path), path.stat().st_mtime)
+    except OSError:
+        return None
 
 
 def create_app(
@@ -100,12 +143,65 @@ def create_app(
                     head += chunk[: len(DEMO_MAGIC) - len(head)]
                 digest.update(chunk)
                 fh.write(chunk)
-        if head != DEMO_MAGIC:
+        demo = uploads / f"{digest.hexdigest()[:16]}.dem"
+        if head == DEMO_MAGIC:
+            partial.replace(demo)
+        elif packing(head):  # a packed demo (.dem.gz, .dem.bz2, .dem.zst)
+            try:
+                unpack(partial, demo)
+            except (ValueError, OSError, EOFError) as exc:
+                raise HTTPException(
+                    422, "That is not a CS2 demo (.dem from CS2)"
+                ) from exc
+            finally:
+                partial.unlink(missing_ok=True)
+        else:
             partial.unlink(missing_ok=True)
             raise HTTPException(422, "That is not a CS2 demo (.dem from CS2)")
-        demo = uploads / f"{digest.hexdigest()[:16]}.dem"
-        partial.replace(demo)
         return runner.submit(demo, Path(name).name, judge).public()
+
+    def folders() -> dict[str, Path]:
+        return demo_folders(runner.settings().cs2)
+
+    @app.get("/api/demos")
+    def local_demos() -> dict:
+        """Demos in CS2's replays folder and in Downloads, newest first."""
+        where = folders()
+        return {
+            "folders": {key: str(path) for key, path in where.items()},
+            "demos": [
+                {
+                    "folder": d.folder,
+                    "name": d.name,
+                    "size": d.size,
+                    "modified": d.modified,
+                    "map": _map_of(where[d.folder] / d.name),
+                    "reviewed": (runner.reports / f"{_stem(d.name)}.json").exists(),
+                    "report_id": _stem(d.name),
+                }
+                for d in list_demos(where)
+            ],
+        }
+
+    @app.post("/api/analyses/local")
+    def analyse_local(choice: LocalChoice) -> dict:
+        """Review a listed demo where it lies (a packed one is unpacked first)."""
+        if choice.judge not in ("flagged", "all", "none"):
+            raise HTTPException(422, "judge must be flagged, all or none")
+        path = resolve(folders(), choice.folder, choice.name)
+        if path is None:
+            raise HTTPException(404, "No such demo in that folder")
+        with path.open("rb") as fh:
+            head = fh.read(len(DEMO_MAGIC))
+        if head != DEMO_MAGIC:
+            uploads.mkdir(parents=True, exist_ok=True)
+            try:
+                path = unpack(path, uploads / f"{_stem(choice.name)}.dem")
+            except (ValueError, OSError, EOFError) as exc:
+                raise HTTPException(
+                    422, "That is not a CS2 demo (.dem from CS2)"
+                ) from exc
+        return runner.submit(path, choice.name, choice.judge).public()
 
     @app.get("/api/analyses/{job_id}")
     def job(job_id: str) -> dict:

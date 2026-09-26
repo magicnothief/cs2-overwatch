@@ -149,3 +149,70 @@ def test_a_cs2_folder_is_checked_before_it_is_saved(
 
 def test_an_unknown_gpu_choice_is_refused(client: TestClient) -> None:
     assert client.put("/api/settings", json={"gpu": "yes"}).status_code == 422
+
+
+def test_local_demos_are_listed_and_reviewed_in_place(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import gzip
+
+    from overwatch.api import app as app_module
+
+    replays = tmp_path / "replays"
+    replays.mkdir()
+    (replays / "match730_9.dem").write_bytes(DEMO_MAGIC + b"a demo")
+    (replays / "old.dem.gz").write_bytes(gzip.compress(DEMO_MAGIC + b"packed"))
+    monkeypatch.setattr(app_module, "demo_folders", lambda cs2=None: {"cs2": replays})
+
+    listed = client.get("/api/demos").json()
+    assert {d["name"] for d in listed["demos"]} == {"match730_9.dem", "old.dem.gz"}
+    assert all(not d["reviewed"] for d in listed["demos"])
+
+    started = client.post(
+        "/api/analyses/local",
+        json={"folder": "cs2", "name": "old.dem.gz", "judge": "none"},
+    )
+    assert started.status_code == 200
+    assert _wait(client, started.json()["id"])["state"] == "done"
+    refused = client.post(
+        "/api/analyses/local", json={"folder": "cs2", "name": "../secret.dem"}
+    )
+    assert refused.status_code == 404
+
+
+def test_a_packed_upload_is_unpacked(client: TestClient) -> None:
+    import gzip
+
+    body = gzip.compress(DEMO_MAGIC + b"packed demo")
+    started = client.post("/api/analyses?name=faceit.dem.gz&judge=none", content=body)
+    assert started.status_code == 200
+    bad = client.post("/api/analyses?name=x.dem.gz", content=gzip.compress(b"nope"))
+    assert bad.status_code == 422
+
+
+def test_a_demo_the_parser_panics_on_fails_the_job(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A truncated demo makes the parser panic; the job must fail, not hang."""
+
+    class Panic(BaseException):
+        pass
+
+    def explode(path, **kwargs):
+        raise Panic("range end index 16 out of range")
+
+    monkeypatch.setattr(jobs, "analyze_demo", explode)
+    monkeypatch.setattr(jobs, "Scorer", lambda path: object())
+    scorer = tmp_path / "scorer.onnx"
+    scorer.write_bytes(b"x")
+    runner = Runner(
+        tmp_path / "reports",
+        scorer_path=scorer,
+        judge_model=None,
+        settings_file=tmp_path / "settings.json",
+    )
+    client = TestClient(create_app(runner, uploads=tmp_path / "up", radars=tmp_path))
+    started = client.post("/api/analyses?judge=none", content=DEMO_MAGIC + b"cut")
+    job = _wait(client, started.json()["id"])
+    assert job["state"] == "failed"
+    assert "Panic" in job["error"]

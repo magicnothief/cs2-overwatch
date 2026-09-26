@@ -53,7 +53,8 @@ class KillReport(BaseModel):
     )
     reaction_ms: float | None = None
     shots_ms: list[int] = Field(
-        default_factory=list, description="the attacker's shots, ms relative to the kill"
+        default_factory=list,
+        description="the attacker's shots, ms relative to the kill",
     )
     arrival_delay_ms: float | None = Field(
         default=None,

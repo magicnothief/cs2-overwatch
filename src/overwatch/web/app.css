@@ -144,6 +144,25 @@ button.quiet {
 .history tr[data-id]:hover td { background: var(--tint); }
 .history .map { font-stretch: 125%; font-weight: 700; }
 .history .num { text-align: right; }
+.local-demos { margin: 2.5rem 0 3rem; }
+.history.local td { vertical-align: middle; white-space: nowrap; overflow-wrap: normal; }
+.history.local td.file { white-space: normal; overflow-wrap: anywhere; font-size: var(--s-1); width: 100%; }
+button.small { font-size: var(--s-1); padding: 0.3em 0.8em; }
+@media (max-width: 600px) {
+  /* a phone: each demo a block, map and button, then its file, then the rest */
+  .history.local, .history.local tbody { display: block; }
+  .history.local thead { display: none; }
+  .history.local tr { display: flex; flex-wrap: wrap; align-items: center; gap: 0.2rem 0.75rem; padding: 0.6rem 0; border-top: 1px solid var(--grid); }
+  .history.local td { border-top: 0; padding: 0; }
+  .history.local td.map { flex: 1; }
+  .history.local td.file { order: 1; flex-basis: 100%; }
+  .history.local td.muted { order: 2; font-size: var(--s-1); }
+}
+.guide { margin-top: 1rem; max-width: 900px; }
+.guide summary { cursor: pointer; font-weight: 600; }
+.guide dl { margin: 0.75rem 0 0; }
+.guide dt { font-weight: 600; margin-top: 0.6rem; }
+.guide dd { margin: 0.15rem 0 0; color: var(--muted); max-width: 72ch; }
 
 /* ---------- this computer ---------- */
 

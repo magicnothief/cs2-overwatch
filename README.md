@@ -45,6 +45,9 @@ Then start it with `overwatch`: it opens in your browser. Nothing leaves your PC
   mesh from the game's files (about a minute, once per map) for line of sight,
   and its radar: Valve's own where the game has one, else drawn from the mesh. CS2 is found through Steam; if it is on a drive Steam does not
   list, set the folder under "This computer".
+- **Demos:** the first page lists those already on this PC, the ones CS2 saved
+  from Watch → Your Matches and those in Downloads, and reviews one where it
+  lies. Or drop a file, compressed ones (.gz, .bz2, .zst) as they come.
 - `overwatch setup` downloads everything up front and reports what it found.
   `overwatch analyze match.dem` reviews a demo in the terminal.
 - **Updating:** the app says on its first page when a new version is out.

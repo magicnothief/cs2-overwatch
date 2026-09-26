@@ -2,6 +2,19 @@
 
 Each version's section becomes its release notes on GitHub. Newest first.
 
+## Unreleased
+
+**Getting demos in**
+- The first page lists the demos already on this PC: those CS2 saved from
+  Watch → Your Matches, and those in Downloads. One click reviews a demo where
+  it lies, without an upload or a copy, and a reviewed one links to its review.
+- Compressed demos (.dem.gz, .dem.bz2, .dem.zst, as FACEIT and others serve
+  them) can be dropped or picked as they come.
+- "How to get a demo" explains where a demo comes from, for matchmaking,
+  FACEIT and tournaments.
+- A broken or cut-off demo now fails with a message instead of leaving the
+  review "running" for ever.
+
 ## 0.3.0 (2026-09-26)
 
 **The judge**

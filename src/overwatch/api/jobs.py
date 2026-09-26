@@ -153,7 +153,11 @@ class Runner:
             (self.reports / f"{report_id}.json").write_text(report.model_dump_json())
             job.report_id = report_id
             job.state, job.message = "done", "Finished"
-        except Exception as exc:  # the page must learn what went wrong
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except BaseException as exc:  # the page must learn what went wrong
+            # BaseException too: the demo parser panics (a Rust panic, not an
+            # Exception) on a truncated file, and the job must not hang "running"
             log.exception("analysis %s failed", job.id)
             job.state = "failed"
             job.error = f"{type(exc).__name__}: {exc}"
