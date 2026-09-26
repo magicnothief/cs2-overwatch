@@ -40,6 +40,14 @@ EVENTS_NEEDED: tuple[str, ...] = (
 )
 
 
+class DemoParseError(RuntimeError):
+    """A demo could not be parsed: the worker crashed, timed out, or wrote nothing.
+
+    Carries a message a reviewer can read on the page. Never a path from the
+    user's home directory, never a line of somebody else's traceback verbatim.
+    """
+
+
 @dataclass(frozen=True)
 class ParsedMatch:
     """One parsed match: per-tick player state plus the events we care about.

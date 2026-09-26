@@ -14,6 +14,11 @@ Each version's section becomes its release notes on GitHub. Newest first.
   FACEIT and tournaments.
 - A broken or cut-off demo now fails with a message instead of leaving the
   review "running" for ever.
+- Demos are now read in a separate short-lived process, which is given the demo
+  and nowhere to write but its own scratch directory. A demo is a file someone
+  else made; if reading one ever crashes, it takes down that process and the
+  review fails, instead of touching the program that holds your reports and the
+  page. Costs about half a second per demo.
 
 ## 0.3.0 (2026-09-26)
 

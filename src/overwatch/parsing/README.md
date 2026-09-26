@@ -47,3 +47,15 @@ headshot` plus whatever extras the source carried (`distance`, `penetrated`, …
 
 Derived aim columns (`d_yaw`, `yaw_speed`, …) are **not** here. They live in
 `overwatch/aim.py`, because Layers 1 and 3 both need them. See ADR 0004.
+
+## Where the demo is actually read
+
+`parse_demo()` does not call demoparser2. It spawns `python -m overwatch.parsing.worker
+<demo> <out_dir>`, waits, and reads `ticks.parquet`, `events/<name>.parquet` and `meta.json`
+back. `worker.parse_in_process()` is the call that touches the file, and only the child makes
+it. A non-zero exit, a signal (`SIGSEGV`, `SIGKILL`) or a timeout is a `DemoParseError`, which
+the review page shows as a failed analysis.
+
+The reason is in `worker.py`: demoparser2 is a Rust extension reading a file a stranger wrote.
+`except BaseException` holds a panic; it does not hold a heap overflow. `load_cs2cd()` needs no
+such boundary — a CS2CD match is a parquet we shipped, not a demo a stranger sent.

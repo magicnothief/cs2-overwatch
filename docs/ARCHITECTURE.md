@@ -108,6 +108,12 @@ projecting 3D head/body positions into rendered frames. You learn camera math an
     `player_blind`, `round_start`/`round_end`, …
 - Make the normalized format one that **CS2CD also loads into** (CS2CD was parsed with
   demoparser2, so the column names already match). Then a single pipeline serves both sources.
+- **The parse runs in a child process**, `python -m overwatch.parsing.worker <demo> <out_dir>`,
+  which writes the tables and exits. A `.dem` is a file a stranger wrote and demoparser2 is a
+  Rust extension: a panic is catchable, a memory-safety bug is not, and the API server holds the
+  listening socket and the judge model. The child gets the demo path and an output directory,
+  nothing else, plus `RLIMIT_AS`/`RLIMIT_CPU` on POSIX. It costs +0.43 s on a 26 MB demo
+  (0.403 s → 0.833 s), against a ~10 s layer 1–3 path.
 - CS2 demos are 64 tick, and sub-tick means a shot can happen *between* recorded ticks. Your
   angle derivatives are approximations. Keep that in mind when you pick thresholds.
 
