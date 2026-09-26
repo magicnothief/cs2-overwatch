@@ -19,6 +19,7 @@ from overwatch.layers.l4_judge import (
 from overwatch.layers.l4_judge.rendering import (
     FEATURE_LABELS,
     FEATURE_SINCE_JUDGE,
+    FEATURE_UNTIL_JUDGE,
     LATEST_JUDGE,
     features_for,
 )
@@ -224,10 +225,11 @@ class TestACraftedDemoCannotWriteTheAccusation:
         assert rank in render_case(_case(rank=rank))
 
 
-#: The measurements judge v4 was fine-tuned on. Frozen on purpose: it is the list a
-#: widening of FEATURE_LABELS has to disagree with, so that adding a measurement
-#: without saying which judge first saw it fails here instead of silently reaching a
-#: model that was never trained on it.
+#: The ten measurements judge v4 was fine-tuned on. Frozen on purpose, and it is the
+#: list every change to FEATURE_LABELS has to agree with in both directions: adding a
+#: measurement without saying which judge first saw it fails here instead of silently
+#: reaching a model that was never trained on it, and dropping one of these fails here
+#: instead of silently taking it off the pinned judge's prompt.
 V4_MEASUREMENTS = frozenset(
     {
         "straight_share",
@@ -236,6 +238,7 @@ V4_MEASUREMENTS = frozenset(
         "visible_share",
         "fast_kills",
         "angle_at_first_visible_median",
+        "snap_max",
         "zero_motion_share",
         "never_visible_share",
         "sniper_share",
@@ -328,4 +331,60 @@ class TestAJudgeOnlyReadsWhatItWasTrainedOn:
             }
             assert not shown & later, (
                 f"v{generation} would read {sorted(shown & later)}"
+            )
+
+
+class TestAJudgeStillReadsAMeasurementRetiredAfterIt:
+    """`snap_max` was retired from the evidence for the judge trained next
+    (docs/specs/2026-09-26-triggerbot-and-snap-count.md: "`snap_max` stays a player
+    feature; the judge no longer sees it"), and `ab798bf` carried that out by deleting
+    it from FEATURE_LABELS — which also took it off v4's prompt, and v4 is the judge
+    models.JUDGE pins. Its fine-tune read 10 measurements; on 9 it loses 6.3107 points
+    of target match, 92.2330% against 85.9223% over the same 206 held-out cases
+    (docs/evals/2026-09-26-judge-v4-on-master-text.md). So retiring a measurement from
+    the format is a different act from taking it off a shipped judge's prompt.
+    """
+
+    def _turning(self) -> PlayerCase:
+        """One case carrying the fastest turn, with the pinned reference's own clean
+        numbers (models/scorer/scorer.json, reference.judge.baselines.snap_max and
+        reference.judge.lines.snap_max)."""
+        return _case(
+            features={"straight_share": 0.62, "snap_max": 86.6},
+            baselines={"straight_share": 0.17, "snap_max": 63.369140625},
+            clean_lines={"snap_max": (283.5126953125, 719.669921875)},
+        )
+
+    def test_v4_reads_the_fastest_turn_with_its_clean_numbers(self) -> None:
+        text = render_case(self._turning(), judge=4)
+        assert (
+            "- fastest turn on a kill tick (deg/s): 86.6 (clean 63.4; 95% of clean "
+            "players are below 284, 99% below 720)" in text
+        )
+
+    def test_the_pinned_judge_reads_every_measurement_it_was_trained_on(self) -> None:
+        missing = V4_MEASUREMENTS - set(features_for(models.JUDGE_GENERATION))
+        assert not missing, (
+            f"the pinned judge v{models.JUDGE_GENERATION} was fine-tuned on "
+            f"{sorted(missing)} and would no longer be shown them. Deleting a "
+            "measurement from rendering.FEATURE_LABELS takes it off that judge's "
+            "prompt; retire it with rendering.FEATURE_UNTIL_JUDGE instead."
+        )
+
+    @pytest.mark.parametrize("generation", list(range(5, LATEST_JUDGE + 1)))
+    def test_the_judges_trained_after_it_are_not_shown_it(
+        self, generation: int
+    ) -> None:
+        text = render_case(self._turning(), judge=generation)
+        assert "fastest turn" not in text
+        assert _measurements(text) == ["flicks that never change direction"]
+
+    def test_no_judge_reads_a_measurement_retired_before_it(self) -> None:
+        for generation in range(1, LATEST_JUDGE + 1):
+            shown = set(features_for(generation))
+            earlier = {
+                k for k, until in FEATURE_UNTIL_JUDGE.items() if until < generation
+            }
+            assert not shown & earlier, (
+                f"v{generation} would read {sorted(shown & earlier)}"
             )

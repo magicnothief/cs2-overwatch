@@ -32,6 +32,12 @@ and clean_lines cover every measurement the format knows, including the ones the
 pinned judge is not shown (rendering.FEATURE_SINCE_JUDGE). Both render their
 evidence with rendering.LATEST_JUDGE, which is what keeps point 4 above true: a
 reason never cites a number the text the model read does not contain.
+
+clean_lines goes the other way too: it covers a measurement retired from the judge
+being trained (rendering.FEATURE_UNTIL_JUDGE) while a judge trained on it is still
+pinned, because the case carries the lines and the pinned judge's text shows them.
+CHECKS does not, and must not — a retired measurement is not evidence for the
+verdict the next fine-tune learns.
 """
 
 from __future__ import annotations

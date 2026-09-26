@@ -17,9 +17,11 @@ Three rules shape the format:
    case is kept near 300 tokens and the verdict is a small JSON object. A report
    on ten players should take a minute, not twenty.
 4. **A judge sees only what it was trained on.** Measurements are added to the
-   format ahead of the fine-tune that learns them, so which ones a case shows
-   depends on the judge generation it is rendered for — FEATURE_SINCE_JUDGE, and
-   the `judge` argument to render_case. Rule 1 above is why this is not cosmetic:
+   format ahead of the fine-tune that learns them, and retired from it while a
+   judge trained on them is still pinned, so which ones a case shows depends on the
+   judge generation it is rendered for — FEATURE_SINCE_JUDGE and
+   FEATURE_UNTIL_JUDGE, and the `judge` argument to render_case. Rule 1 above is
+   why this is not cosmetic:
    the clean reference a judge shipped with has no baseline for a measurement that
    came later, so showing it anyway puts a bare number in front of the model.
 
@@ -136,6 +138,7 @@ FEATURE_LABELS: dict[str, tuple[str, str]] = {
         "degrees off target the moment the enemy appeared",
         "lower",
     ),
+    "snap_max": ("fastest turn on a kill tick (deg/s)", "higher"),
     "snap_kills": ("kills with a turn over 200 deg/s on the kill tick", "higher"),
     "arrival_shot_share": (
         "kills fired on the very tick the crosshair reached the head",
@@ -167,6 +170,32 @@ FEATURE_SINCE_JUDGE: dict[str, int] = {
     "arrival_shot_share": 5,
 }
 
+#: The mirror of the table above: measurements a later fine-tune stopped being
+#: trained on, and the last generation whose training data held them. A judge reads
+#: what its own training data held — which means the one it lost, too, not only the
+#: ones that came after it.
+#:
+#: `snap_max` is here because retiring a measurement from the format is not the same
+#: act as retiring it from a judge already shipped. The spec in
+#: docs/specs/2026-09-26-triggerbot-and-snap-count.md replaced it with `snap_kills` for
+#: the judge trained next ("`snap_max` stays a player feature; the judge no longer sees
+#: it"), and `ab798bf` carried that out by deleting the line from FEATURE_LABELS —
+#: which also took it off v4's prompt, and v4 is what models.JUDGE pins. v4's fine-tune
+#: read 10 measurements; on the label table without this entry it reads 9, and that one
+#: missing line costs 6.3107 points of target match on the 206 held-out cases: 92.2330%
+#: (190/206) on the text v4 was trained on against 85.9223% (177/206) without it, same
+#: GGUF, same runtime, same rows (docs/evals/2026-09-26-judge-v4-on-master-text.md,
+#: MAG-13). The high-kill band loses most, -19.6 points past 20 kills, which is where
+#: one extreme turn is likeliest.
+#:
+#: Rule 1 of this module holds on both sides: the pinned reference still carries the
+#: baseline and the lines this renders against (`models/scorer/scorer.json`,
+#: `reference.judge.baselines.snap_max`, `reference.judge.lines.snap_max`), so v4 is
+#: shown the figure with the clean numbers it was trained to compare against.
+FEATURE_UNTIL_JUDGE: dict[str, int] = {
+    "snap_max": 4,
+}
+
 #: The newest judge this format knows how to feed. Training, annotation and the
 #: baseline run render for this one, not for the pinned judge: a fine-tune has to be
 #: trained on every measurement before a pin can ever show it one.
@@ -174,11 +203,19 @@ LATEST_JUDGE = 5
 
 
 def features_for(judge: int) -> dict[str, tuple[str, str]]:
-    """The measurements one generation of judge may be shown, in the text's order."""
+    """The measurements one generation of judge may be shown, in the text's order.
+
+    A judge reads the measurements its own training data held: nothing added after
+    it (FEATURE_SINCE_JUDGE), and nothing retired before it (FEATURE_UNTIL_JUDGE).
+    """
     return {
         key: label
         for key, label in FEATURE_LABELS.items()
-        if FEATURE_SINCE_JUDGE.get(key, 1) <= judge
+        if (
+            FEATURE_SINCE_JUDGE.get(key, 1)
+            <= judge
+            <= FEATURE_UNTIL_JUDGE.get(key, judge)
+        )
     }
 
 
