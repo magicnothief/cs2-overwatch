@@ -28,6 +28,8 @@ from overwatch import paths
 
 REPO = "magicnothief/cs2-overwatch"
 LATEST = f"https://api.github.com/repos/{REPO}/releases/latest"
+#: A release page is always here; a URL that is not is not shown to anyone.
+GITHUB = "https://github.com/"
 CACHE = paths.DATA / "update.json"
 #: How long a check's answer is trusted.
 MAX_AGE = 24 * 3600
@@ -85,7 +87,12 @@ def latest_release(timeout: float = 5.0) -> Release | None:
         ),
         None,
     )
-    return Release(tag.lstrip("v"), str(data.get("html_url") or ""), wheel)
+    # The page ends up in an href, so nothing but a GitHub release page is kept:
+    # anything else (a javascript: URI, another host) becomes no link at all.
+    url = str(data.get("html_url") or "")
+    if not url.startswith(GITHUB):
+        url = ""
+    return Release(tag.lstrip("v"), url, wheel)
 
 
 def check(cache: Path = CACHE, *, now: float | None = None) -> Release | None:

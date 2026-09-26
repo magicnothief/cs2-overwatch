@@ -91,6 +91,15 @@ tinted; ← → step through their kills, ↑ ↓ change player.
 3. **Width carries hierarchy**, so size and colour do not have to.
 4. **Every claim is one click from its tick.** The command is always there to copy.
 5. **Boldness in one place: the timeline.** Everything around it stays quiet.
+6. **A link the page did not author is checked where it enters, not at the
+   `href`.** The only outside URL on the page is the update notice's "What's
+   new", which comes from GitHub's releases API; `updates.latest_release()`
+   keeps it only when it starts with `https://github.com/` and otherwise makes
+   it `""`. `updateNotice()` in `app.js` already tests `u.url`, so a rejected
+   URL costs the sentence its link and its full stop and nothing else — the
+   version, the install command and the Copy button are unchanged. Any future
+   outside URL follows the same rule: validate at the fetch, render nothing
+   when it fails, never scheme-check inside the markup.
 
 ## The report, top to bottom (2026-09-26)
 
