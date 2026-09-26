@@ -19,7 +19,7 @@ what belongs there, what to learn first, a first exercise, and when that part is
 On **Windows**, in PowerShell:
 
 ```powershell
-powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/magicnothief/cs2-overwatch/master/install.ps1 | iex"
+iex ((irm 'https://raw.githubusercontent.com/magicnothief/cs2-overwatch/master/install.ps1') -replace 'powershell -ExecutionPolicy ByPass -c ', '')
 ```
 
 On **Linux**:
