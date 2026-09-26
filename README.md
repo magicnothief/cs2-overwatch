@@ -28,7 +28,13 @@ On **Linux**:
 curl -LsSf https://raw.githubusercontent.com/magicnothief/cs2-overwatch/master/install.sh | sh
 ```
 
-Then start it with `overwatch`: it opens in your browser. Nothing leaves your PC.
+Then start it with `overwatch`: it opens in your browser.
+
+**No demo, report, player name or Steam ID ever leaves your PC.** Every layer,
+the judge included, runs locally. The app does make two other connections: it
+downloads the models from Hugging Face on first start, and it asks GitHub once a
+day whether a newer release is out — turn that off with the `updates` setting, or
+run without a network once the models are down.
 
 - **No compiler, no admin rights, no Python needed.** The script gets
   [uv](https://docs.astral.sh/uv/), which installs Python 3.12 and the app into
@@ -74,6 +80,29 @@ Layer 1 finding, or a score above 90% of clean players.
 Or in the browser: `overwatch` (in this checkout: `uv run overwatch`), then drop
 a demo on the page. Every report is laid out on a round timeline, one lane per
 player, with each kill's crosshair trace one click away.
+
+## What a report is not
+
+A report is a reason to go and watch a demo yourself. It is not proof, and
+"flagged" is not a finding of guilt.
+
+- **A flag is a statistic, not a verdict.** A player is flagged at the line where
+  90% of clean players fall below, so roughly one clean player in ten is flagged
+  by construction. Strong players are flagged more often than weak ones.
+- **The judge is a 4B language model.** It reads the numbers this tool measured
+  and writes a paragraph. It is graded against ban labels, but it is wrong about
+  individual players, in both directions.
+- **A report names a real person.** It carries their name and their Steam ID, and
+  it says they may have cheated. Publishing one — a Discord, a subreddit, a clip —
+  puts a named human being in front of a crowd on the strength of a number.
+  Report a suspected cheater to Valve, in the game, and let the demo speak.
+- **A demo you did not record is a file a stranger wrote.** It can be crafted to
+  make a clean player look guilty; the parser and the judge's input are hardened
+  against that, but the ranking is only as honest as the file.
+
+Under the GDPR, a Steam ID and a player name are personal data, and a report is
+your processing of it. Keep reports to yourself and there is nothing to answer
+for; publish them and you are the controller.
 
 ## Develop
 

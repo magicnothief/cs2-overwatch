@@ -73,6 +73,42 @@ def test_anything_else_is_refused(tmp_path: Path) -> None:
         assert not (tmp_path / "out.dem").exists()
 
 
+@pytest.mark.parametrize("pack", [gzip.compress, bz2.compress])
+def test_a_decompression_bomb_is_refused_before_it_fills_the_disk(
+    tmp_path: Path, pack
+) -> None:
+    """A packed demo that unpacks past the cap must stop at the cap.
+
+    131 bytes of bzip2 unpack to 128 MB, so the size of what arrives says
+    nothing about the size of what is written.
+    """
+    bomb = tmp_path / "bomb.dem.gz"
+    bomb.write_bytes(pack(demos.DEMO_MAGIC + b"\0" * (4 << 20)))
+    assert bomb.stat().st_size < 64 * 1024  # small on the way in
+    with pytest.raises(demos.DemoTooLarge):
+        demos.unpack(bomb, tmp_path / "out.dem", limit=1 << 20)
+    assert not (tmp_path / "out.dem").exists()
+    assert not (tmp_path / "out.part").exists()
+
+
+def test_a_bomb_that_is_not_a_demo_is_refused_at_the_first_eight_bytes(
+    tmp_path: Path,
+) -> None:
+    bomb = tmp_path / "zeros.dem.bz2"
+    bomb.write_bytes(bz2.compress(b"\0" * (64 << 20), 9))
+    with pytest.raises(ValueError, match="not a CS2 demo"):
+        demos.unpack(bomb, tmp_path / "out.dem")
+    assert not (tmp_path / "out.dem").exists()
+
+
+def test_a_demo_up_to_the_cap_still_unpacks(tmp_path: Path) -> None:
+    whole = demos.DEMO_MAGIC + b"x" * 1000
+    packed = tmp_path / "ok.dem.gz"
+    packed.write_bytes(gzip.compress(whole))
+    out = demos.unpack(packed, tmp_path / "out.dem", limit=len(whole))
+    assert out.read_bytes() == whole
+
+
 def test_a_cut_off_archive_leaves_nothing_behind(tmp_path: Path) -> None:
     whole = gzip.compress(demos.DEMO_MAGIC + bytes(range(256)) * 400)
     cut = tmp_path / "cut.dem.gz"

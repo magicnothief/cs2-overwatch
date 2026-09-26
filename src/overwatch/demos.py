@@ -11,6 +11,12 @@ a request names a folder by key and a file by name, never a path.
 Demos often come compressed. Gzip, bzip2 and Zstandard are unpacked to a
 temporary .dem first, and every demo, packed or not, must start with CS2's
 magic bytes before it is parsed.
+
+A packed demo comes from a stranger, and a compressed file says nothing about
+how large it becomes: 131 bytes of bzip2 unpack to 128 MB. So unpacking stops
+at MAX_UNPACKED_BYTES, and the magic bytes are checked on the first eight bytes
+out of the decompressor rather than on the finished file, so a bomb that is not
+a demo at all costs eight bytes instead of a full disk.
 """
 
 from __future__ import annotations
@@ -37,6 +43,14 @@ PACKED = {
 }
 #: The list stops here: a Downloads folder can hold years of files.
 LIMIT = 40
+#: Largest demo ever written out of a packed one. Competitive demos run 50-150
+#: MB and tournament ones up to ~500 MB, so anything past this is a
+#: decompression bomb rather than a match.
+MAX_UNPACKED_BYTES = 2 * 1024**3
+
+
+class DemoTooLarge(ValueError):
+    """A packed demo that unpacks to more than MAX_UNPACKED_BYTES."""
 
 
 @dataclass(frozen=True)
@@ -102,11 +116,13 @@ def packing(head: bytes) -> str | None:
     )
 
 
-def unpack(source: Path, dest: Path) -> Path:
+def unpack(source: Path, dest: Path, *, limit: int | None = None) -> Path:
     """A plain .dem at dest from source, packed or not; checked to be a CS2 demo.
 
-    Raises ValueError when the result is not a CS2 demo.
+    Raises ValueError when the result is not a CS2 demo, and DemoTooLarge when a
+    packed one unpacks to more than `limit` bytes (MAX_UNPACKED_BYTES by default).
     """
+    limit = MAX_UNPACKED_BYTES if limit is None else limit
     with source.open("rb") as fh:
         head = fh.read(len(DEMO_MAGIC))
     kind = packing(head)
@@ -121,8 +137,8 @@ def unpack(source: Path, dest: Path) -> Path:
         part = dest.with_suffix(".part")
         try:
             with opener(source, "rb") as packed, part.open("wb") as out:
-                shutil.copyfileobj(packed, out, 1 << 20)
-        except BaseException:  # a cut-off or corrupt archive leaves no .part behind
+                _copy_demo(packed, out, limit)
+        except BaseException:  # a cut-off, bomb or corrupt archive leaves no .part
             part.unlink(missing_ok=True)
             raise
         part.replace(dest)
@@ -135,6 +151,23 @@ def unpack(source: Path, dest: Path) -> Path:
     return dest
 
 
+def _copy_demo(packed, out, limit: int) -> None:
+    """Copy the decompressed stream to `out`, refusing anything that is not a
+    CS2 demo or that runs past `limit` bytes."""
+    head = packed.read(len(DEMO_MAGIC))
+    if head != DEMO_MAGIC:  # not a demo: stop after eight bytes, not a terabyte
+        msg = "That is not a CS2 demo (.dem from CS2)"
+        raise ValueError(msg)
+    out.write(head)
+    written = len(head)
+    while chunk := packed.read(1 << 20):
+        written += len(chunk)
+        if written > limit:
+            msg = "That file unpacks to more than any CS2 demo"
+            raise DemoTooLarge(msg)
+        out.write(chunk)
+
+
 def _zstd_open(path: Path, mode: str = "rb"):
     import zstandard
 
@@ -143,7 +176,9 @@ def _zstd_open(path: Path, mode: str = "rb"):
 
 __all__ = [
     "DEMO_MAGIC",
+    "MAX_UNPACKED_BYTES",
     "SUFFIXES",
+    "DemoTooLarge",
     "LocalDemo",
     "demo_folders",
     "is_demo_name",

@@ -11,6 +11,16 @@
 
 Local only (127.0.0.1, no accounts). An uploaded demo is stored under its content
 hash, so the name a browser sends is only ever displayed, never used as a path.
+
+"Local only" is a binding address, not an access control: every page the user
+has open can reach 127.0.0.1, and a hostile DNS name can be made to resolve to
+it. So `only_this_machine` below checks two headers on every request. The Host
+header must name this machine, which stops DNS rebinding — an attacker's page
+served from `evil.example` is same-origin with this server once that name
+resolves to 127.0.0.1, and would otherwise read every report. A request that
+changes something must carry no Origin header (a terminal, the CLI) or a local
+one (this page); an Origin from anywhere else is another site driving the
+user's browser, and is refused.
 """
 
 from __future__ import annotations
@@ -23,9 +33,10 @@ import re
 import threading
 from dataclasses import asdict
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -33,6 +44,7 @@ from overwatch import paths, updates
 from overwatch.api.jobs import Runner
 from overwatch.demos import (
     DEMO_MAGIC,
+    DemoTooLarge,
     demo_folders,
     list_demos,
     packing,
@@ -49,6 +61,34 @@ WEB = Path(__file__).resolve().parents[1] / "web"
 MAX_DEMO_BYTES = 2 * 1024**3
 _REPORT_ID = re.compile(r"^[A-Za-z0-9_.-]+$")
 _MAP_NAME = re.compile(r"^[a-z0-9_]+$")
+
+#: The names this machine answers to. Any other Host is a name that was pointed
+#: at 127.0.0.1 to reach this server from a site (DNS rebinding).
+LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+#: Methods that change nothing, so an Origin from elsewhere cannot do harm with
+#: them: the same-origin policy already keeps the answer from being read.
+READ_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+#: Sent with the page. 'unsafe-inline' for styles only: app.js sets a style
+#: attribute on the radar's gradient stops; scripts stay 'self'.
+CSP = (
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data:; font-src 'self'; connect-src 'self'; "
+    "object-src 'none'; base-uri 'none'; form-action 'none'; "
+    "frame-ancestors 'none'"
+)
+
+
+def _hostname(value: str) -> str:
+    """The host in a Host header, without its port and its IPv6 brackets."""
+    if value.startswith("["):
+        return value[1 : value.find("]")] if "]" in value else value[1:]
+    return value.split(":", 1)[0]
+
+
+def is_local_origin(origin: str) -> bool:
+    """Is this Origin the page this server itself serves?"""
+    split = urlsplit(origin)
+    return split.scheme == "http" and (split.hostname or "") in LOCAL_HOSTS
 
 
 class LocalChoice(BaseModel):
@@ -106,6 +146,38 @@ def create_app(
 
     if check_updates:
         threading.Thread(target=look_for_updates, daemon=True).start()
+
+    @app.middleware("http")
+    async def only_this_machine(request: Request, call_next):
+        """Every request, before any route: the Host must be this machine, and
+        anything that changes something must not come from another site."""
+        if _hostname(request.headers.get("host", "")) not in LOCAL_HOSTS:
+            return JSONResponse(
+                {
+                    "detail": "Open http://127.0.0.1 — this server answers to no "
+                    "other name"
+                },
+                status_code=421,
+            )
+        origin = request.headers.get("origin")
+        if (
+            request.method not in READ_METHODS
+            and origin is not None
+            and not is_local_origin(origin)
+        ):
+            return JSONResponse(
+                {
+                    "detail": "Another site cannot start an analysis or change "
+                    "your settings"
+                },
+                status_code=403,
+            )
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        response.headers.setdefault("Content-Security-Policy", CSP)
+        return response
+
     app.mount("/static", StaticFiles(directory=WEB), name="static")
 
     @app.get("/", include_in_schema=False)
@@ -149,6 +221,8 @@ def create_app(
         elif packing(head):  # a packed demo (.dem.gz, .dem.bz2, .dem.zst)
             try:
                 unpack(partial, demo)
+            except DemoTooLarge as exc:
+                raise HTTPException(413, str(exc)) from exc
             except (ValueError, OSError, EOFError) as exc:
                 raise HTTPException(
                     422, "That is not a CS2 demo (.dem from CS2)"
@@ -197,6 +271,8 @@ def create_app(
             uploads.mkdir(parents=True, exist_ok=True)
             try:
                 path = unpack(path, uploads / f"{_stem(choice.name)}.dem")
+            except DemoTooLarge as exc:
+                raise HTTPException(413, str(exc)) from exc
             except (ValueError, OSError, EOFError) as exc:
                 raise HTTPException(
                     422, "That is not a CS2 demo (.dem from CS2)"
@@ -289,4 +365,11 @@ def create_app(
     return app
 
 
-__all__ = ["MAX_DEMO_BYTES", "WEB", "create_app"]
+__all__ = [
+    "CSP",
+    "LOCAL_HOSTS",
+    "MAX_DEMO_BYTES",
+    "WEB",
+    "create_app",
+    "is_local_origin",
+]

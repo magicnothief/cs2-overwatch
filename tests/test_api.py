@@ -16,6 +16,9 @@ from overwatch.api.app import DEMO_MAGIC, create_app
 from overwatch.api.jobs import Runner
 from overwatch.pipeline.report import MatchReport, PlayerReport
 
+#: What a browser is told to open, so Host and Origin are what a real one sends.
+LOCAL = "http://127.0.0.1:8000"
+
 
 def _fake_report(path, **kwargs) -> MatchReport:
     progress = kwargs.get("progress")
@@ -43,7 +46,8 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
         settings_file=tmp_path / "settings.json",
     )
     return TestClient(
-        create_app(runner, uploads=tmp_path / "uploads", radars=tmp_path / "radars")
+        create_app(runner, uploads=tmp_path / "uploads", radars=tmp_path / "radars"),
+        base_url=LOCAL,
     )
 
 
@@ -91,7 +95,9 @@ def test_a_report_id_cannot_walk_the_filesystem(client: TestClient) -> None:
 
 def test_without_a_scorer_it_says_what_to_run(tmp_path: Path) -> None:
     runner = Runner(tmp_path, scorer_path=tmp_path / "missing.pt", judge_model=None)
-    client = TestClient(create_app(runner, uploads=tmp_path / "uploads"))
+    client = TestClient(
+        create_app(runner, uploads=tmp_path / "uploads"), base_url=LOCAL
+    )
     assert client.get("/api/status").json()["scorer"] is False
     response = client.post("/api/analyses", content=DEMO_MAGIC)
     assert response.status_code == 503
@@ -211,8 +217,78 @@ def test_a_demo_the_parser_panics_on_fails_the_job(
         judge_model=None,
         settings_file=tmp_path / "settings.json",
     )
-    client = TestClient(create_app(runner, uploads=tmp_path / "up", radars=tmp_path))
+    client = TestClient(
+        create_app(runner, uploads=tmp_path / "up", radars=tmp_path), base_url=LOCAL
+    )
     started = client.post("/api/analyses?judge=none", content=DEMO_MAGIC + b"cut")
     job = _wait(client, started.json()["id"])
     assert job["state"] == "failed"
     assert "Panic" in job["error"]
+
+
+def test_another_site_cannot_start_an_analysis(client: TestClient) -> None:
+    """A page on evil.example can POST to 127.0.0.1 without a preflight: POST
+    with text/plain is a simple request. The Origin check is what stops it."""
+    refused = client.post(
+        "/api/analyses?name=x.dem&judge=none",
+        content=DEMO_MAGIC + b"a demo",
+        headers={"Origin": "https://evil.example", "Content-Type": "text/plain"},
+    )
+    assert refused.status_code == 403
+    assert client.get("/api/reports").json() == []
+
+
+def test_another_site_cannot_change_the_settings(client: TestClient) -> None:
+    refused = client.put(
+        "/api/settings", json={"gpu": "off"}, headers={"Origin": "https://evil.example"}
+    )
+    assert refused.status_code == 403
+    assert client.get("/api/settings").json()["gpu"] == "auto"
+
+
+def test_a_sandboxed_page_sending_origin_null_is_refused(client: TestClient) -> None:
+    refused = client.post(
+        "/api/analyses/local",
+        json={"folder": "cs2", "name": "x.dem"},
+        headers={"Origin": "null"},
+    )
+    assert refused.status_code == 403
+
+
+def test_the_page_itself_and_the_terminal_still_work(client: TestClient) -> None:
+    from_page = client.put(
+        "/api/settings", json={"gpu": "off"}, headers={"Origin": LOCAL}
+    )
+    assert from_page.status_code == 200
+    no_origin = client.put("/api/settings", json={"gpu": "auto"})  # curl, the CLI
+    assert no_origin.status_code == 200
+
+
+def test_a_rebound_dns_name_cannot_read_the_reports(client: TestClient) -> None:
+    """evil.example resolved to 127.0.0.1 is same-origin with this server, so
+    the same-origin policy does not help; the Host check does."""
+    for path in ("/api/reports", "/api/settings", "/api/demos"):
+        rebound = client.get(path, headers={"Host": "evil.example"})
+        assert rebound.status_code == 421, path
+
+
+def test_the_page_carries_its_security_headers(client: TestClient) -> None:
+    headers = client.get("/").headers
+    assert headers["X-Content-Type-Options"] == "nosniff"
+    assert "frame-ancestors 'none'" in headers["Content-Security-Policy"]
+    assert "script-src 'self'" in headers["Content-Security-Policy"]
+
+
+def test_a_packed_upload_that_is_a_bomb_is_refused(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import bz2
+
+    from overwatch import demos
+
+    monkeypatch.setattr(demos, "MAX_UNPACKED_BYTES", 1 << 20)
+    body = bz2.compress(DEMO_MAGIC + b"\0" * (8 << 20), 9)
+    assert len(body) < 64 * 1024
+    refused = client.post("/api/analyses?name=bomb.dem.bz2&judge=none", content=body)
+    assert refused.status_code == 413
+    assert not any((tmp_path / "uploads").glob("*.dem"))
