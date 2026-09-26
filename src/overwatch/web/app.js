@@ -359,15 +359,21 @@ async function report(id, params) {
   const radar = await radarFor(data.map_name);
   const fresh = view.dataset.report !== id;
   view.dataset.report = id;
-  const detail = el("section", { class: "detail" },
-    el("div", {}, kill ? killDetail(kill, radar, data.map_name, player.name || player.player_id) : el("p", { class: "muted" }, "This player has no kills to show.")),
+  const detail = el("section", { class: "detail", id: "the-moment", tabindex: "-1" },
+    el("div", {},
+      player ? moments(player, kill) : null,
+      kill ? killDetail(kill, radar, data.map_name, player.name || player.player_id) : el("p", { class: "muted" }, "This player has no kills to show.")),
     player ? playerPanel(player, data) : null);
   // choosing another kill in the same report keeps the timeline as it is: rebuilt,
   // every ring would be laid out again and the lanes' sideways scroll would reset
   const kept = !fresh && view.querySelector(".timeline");
   if (kept) {
+    // the moments list replaces itself under the reader's own finger; without
+    // this, choosing a moment by keyboard drops focus to the top of the page
+    const wasInMoments = document.activeElement?.closest(".moments");
     markSelection(kept, player, kill);
     view.querySelector(".detail").replaceWith(detail);
+    if (wasInMoments) detail.querySelector(".moments li.here button")?.focus();
   } else {
     view.replaceChildren(matchHeader(data), timeline(data, players, player, kill, fresh), detail);
     dodgeKills();
@@ -383,6 +389,36 @@ function markSelection(grid, player, kill) {
   if (id && kill) {
     grid.querySelector(`.cell[data-player="${CSS.escape(id)}"] .kill[data-tick="${kill.tick}"]`)?.classList.add("selected");
   }
+}
+
+/**
+ * The moments to watch, ranked, as a list you can read rather than a set of
+ * rings you have to remember. `top_kills` was already computed and already
+ * ordered; until now the only way to reach the second one was an arrow key
+ * nobody was told about, or hunting the right ring in a lane of eight.
+ */
+function moments(p, current) {
+  const top = p.top_kills || [];
+  if (top.length < 2) return null;
+  return el("nav", { class: "moments", "aria-label": `Moments to watch for ${p.name || p.player_id}` },
+    el("h2", {}, p.flagged ? "Watch these first" : "This player's strongest moments"),
+    el("ol", {}, top.map((k) => {
+      const what = [weapon(k.weapon), k.headshot ? "headshot" : null].filter(Boolean).join(" ");
+      const why = k.seen_first === false
+        ? "the enemy was never visible before dying"
+        : k.aim_through_cover != null && k.aim_through_cover > 0.3
+          ? `${pct(k.aim_through_cover)} of the approach aimed through cover`
+          : k.reaction_ms != null && k.reaction_ms < 250
+            ? `${Math.round(k.reaction_ms)} ms after the enemy appeared`
+            : null;
+      const here = current && k.tick === current.tick;
+      return el("li", { class: here ? "here" : "" },
+        el("button", { "aria-current": here ? "true" : null, onclick: () => go({ p: p.player_id, k: k.tick }) },
+          el("span", { class: "when" }, `Round ${k.round ?? "?"}`),
+          el("span", { class: "what" }, `${what || "kill"}${k.victim ? ` on ${k.victim}` : ""}`),
+          why ? el("span", { class: "why muted" }, why) : null,
+          el("span", { class: "kill-score" }, (k.score ?? 0).toFixed(2))));
+    })));
 }
 
 /** Teams together (by starting side), flagged players and high scores first. */
@@ -403,7 +439,47 @@ function matchHeader(data) {
       data.visibility.startsWith("ray cast")
         ? "Who could see whom was ray cast against the map itself."
         : "Who could see whom comes from the game's own spotting flag, which is less reliable."),
+    finding(data),
     data.notes.length ? el("ul", { class: "notes" }, data.notes.map((n) => el("li", {}, sentence(n)))) : null);
+}
+
+/**
+ * The answer, before its support. A reviewer opens a report to learn one thing:
+ * did anyone here cheat. Until this existed that fact was a 12.8px chip on the
+ * right edge of whichever of ten lanes happened to be flagged, and the loudest
+ * thing on the page was the map name. Most runs flag nobody, so the quiet case
+ * gets a sentence of its own rather than an absence.
+ */
+function finding(data) {
+  const flagged = data.players.filter((p) => p.flagged);
+  const line = el("p", { class: "finding-line" });
+  if (!flagged.length) {
+    return el("div", { class: "finding clear" },
+      el("p", { class: "finding-line" }, "Nobody here is flagged."),
+      el("p", { class: "finding-note muted" },
+        `Every player scored below the line, which is set at ${pct(data.flag_percentile ?? 0.9)} of clean players, ` +
+        "and no hard limit was broken. That is the ordinary result."));
+  }
+  line.append(el("strong", {}, `${flagged.length} of ${data.players.length} players flagged`), ": ");
+  flagged.forEach((p, i) => {
+    if (i) line.append(i === flagged.length - 1 ? " and " : ", ");
+    line.append(el("button", { class: "finding-who", onclick: () => go({ p: p.player_id, k: (p.top_kills[0] || p.kill_log[0] || {}).tick }) },
+      p.name || p.player_id));
+    if (p.verdict) {
+      const kind = p.verdict.verdict === "cheating" && p.verdict.cheat_type !== "none"
+        ? `, ${p.verdict.cheat_type}` : "";
+      line.append(" — ", el("span", { class: `verdict ${p.verdict.verdict}` },
+        `${sentence(p.verdict.verdict)}, ${p.verdict.probability}%${kind}`));
+    }
+  });
+  // a full stop after a verdict chip reads as a typo, so it only ends a sentence
+  // that ends in words
+  if (!flagged[flagged.length - 1].verdict) line.append(".");
+  const judged = flagged.some((p) => p.verdict);
+  return el("div", { class: "finding" }, line,
+    el("p", { class: "finding-note muted" }, judged
+      ? "A score and a verdict are not proof. Read the moments below before you decide."
+      : "The judge did not run, so this is a score and nothing more. Read the moments below before you decide."));
 }
 
 /**
@@ -453,9 +529,11 @@ new ResizeObserver(() => view.querySelector(".timeline") && dodgeKills()).observ
 function timeline(data, players, selected, kill, animate) {
   const rounds = data.rounds;
   const switches = new Set(data.side_switches || []);
+  // not role="grid": a CSS grid has no row elements to carry role="row", and a
+  // grid whose rows a screen reader cannot find is worse than no role at all
   const grid = el("div", {
     class: "timeline",
-    role: "grid",
+    role: "group",
     "aria-label": "Every kill, by player and round",
     style: `grid-template-columns: minmax(8rem, 13rem) repeat(${rounds.length}, minmax(2rem, 1fr)) minmax(12rem, auto)`,
   });
@@ -478,7 +556,9 @@ function timeline(data, players, selected, kill, animate) {
       style: `--side: var(--${p.side === "CT" ? "ct" : p.side === "T" ? "t" : "grid"})`,
       title: `${p.name || p.player_id}, started as ${p.side || "unknown side"}`,
       onclick: select,
-    }, p.name || p.player_id));
+      // magenta says flagged to a reader who can see it; nobody else. A verdict
+      // must never rest on a colour, so the word is there too.
+    }, p.name || p.player_id, p.flagged ? el("span", { class: "sr-only" }, " (flagged)") : null));
 
     const byRound = new Map();
     for (const k of p.kill_log) {
@@ -511,10 +591,23 @@ function timeline(data, players, selected, kill, animate) {
     });
 
     const pctText = p.clean_percentile == null ? "" : `above ${pct(p.clean_percentile)} of clean players`;
+    // "above 86% of clean players" and "above 91%" are one word apart and a world
+    // apart, because the line is at 90%. The meter is that sentence as a length,
+    // with a mark where the flag line sits, so the gap to it is seen, not computed.
+    const line = Math.round(100 * (data.flag_percentile ?? 0.9));
+    const meter = el("span", {
+      class: "meter" + (p.flagged ? " flagged" : "") + (p.enough_kills ? "" : " thin"),
+      "aria-hidden": "true",
+      style: `--fill:${Math.round(100 * Math.min(1, Math.max(0, p.clean_percentile)))}%; --line:${line}%`,
+    }, el("span", { class: "fill" }));
     grid.append(el("div", { class: "lane-score" + (isSelected ? " selected" : ""), "data-player": p.player_id },
       el("span", { class: "value" }, p.score == null ? "–" : p.score.toFixed(2)),
+      p.clean_percentile == null ? null : meter,
       el("span", { class: "muted" }, p.enough_kills ? pctText : "too few kills to say"),
-      p.verdict ? el("span", { class: `verdict ${p.verdict.verdict}` }, `${sentence(p.verdict.verdict)} ${p.verdict.probability}%`) : null));
+      p.verdict
+        ? el("span", { class: `verdict ${p.verdict.verdict}` }, `${sentence(p.verdict.verdict)} ${p.verdict.probability}%`)
+        // flagged with no judge run: the lane still has to say so in words
+        : p.flagged ? el("span", { class: "verdict flagged-chip" }, "Flagged") : null));
   }
 
   // one row's cells light up together when the pointer is on any of them
@@ -527,30 +620,48 @@ function timeline(data, players, selected, kill, animate) {
 
   const switchText = data.side_switches && data.side_switches.length
     ? ` The double line is where the teams swapped sides.` : "";
+  // ~110 kill rings and 10 names sit between the top of the page and the
+  // evidence. A keyboard reader who wants the evidence should not tab all of it.
+  // a button, not an anchor: the page routes on the hash, so href="#the-moment"
+  // would leave the report and land on the home page
+  const skip = el("button", {
+    class: "skip",
+    onclick: () => {
+      const to = view.querySelector("#the-moment");
+      if (!to) return;
+      to.focus();
+      to.scrollIntoView({ block: "start" });
+    },
+  }, "Skip the timeline, go to the evidence");
   return el("section", {},
+    skip,
     el("div", { class: "timeline-scroll" }, grid),
     el("p", { class: "legend" },
       "Each ring is a kill, placed where it happened in the round. Filled means a headshot; larger means the model found that kill more suspicious. ",
       el("span", { class: "flag" }, "Magenta"),
       " marks flagged players and the kills to watch first. The bar by each name is the side they started on: ",
-      el("span", { style: "color:var(--ct);font-weight:600" }, "CT"), " or ",
-      el("span", { style: "color:var(--t);font-weight:600" }, "T"), ".", switchText));
+      el("span", { style: "color:var(--ct-ink);font-weight:600" }, "CT"), " or ",
+      el("span", { style: "color:var(--t-ink);font-weight:600" }, "T"), ".", switchText,
+      ` The bar beside each score is how far that player sits above clean players, and the mark on it is the line at ${pct(data.flag_percentile ?? 0.9)}, where flagging starts.`));
 }
 
 function killDetail(k, radarMeta, mapName, shooter) {
-  const facts = [];
+  // The measurements that could carry an accusation read first and read louder;
+  // the setting is true and useful, but it is not what the claim rests on.
+  const measured = [];
+  const setting = [];
   const what = [weapon(k.weapon), k.headshot ? "headshot" : null].filter(Boolean).join(" ");
-  if (k.distance != null) facts.push(`${Math.round(k.distance)} m away${k.walls_penetrated ? `, through ${k.walls_penetrated === 1 ? "a wall" : `${k.walls_penetrated} walls`}` : ""}.`);
-  if (k.aim_through_cover != null) facts.push(`The crosshair was on the enemy through cover for ${pct(k.aim_through_cover)} of the last half second.`);
-  if (k.seen_first === false) facts.push("The enemy was never visible before dying.");
-  else if (k.reaction_ms != null && k.reaction_ms < 1990) facts.push(`The kill came ${Math.round(k.reaction_ms)} ms after the enemy became visible.`);
+  if (k.aim_through_cover != null) measured.push(`The crosshair was on the enemy through cover for ${pct(k.aim_through_cover)} of the last half second.`);
+  if (k.seen_first === false) measured.push("The enemy was never visible before dying.");
+  else if (k.reaction_ms != null && k.reaction_ms < 1990) measured.push(`The kill came ${Math.round(k.reaction_ms)} ms after the enemy became visible.`);
   if (k.arrival_delay_ms != null) {
-    facts.push(k.arrival_delay_ms === 0
+    measured.push(k.arrival_delay_ms === 0
       ? "The first shot came on the very tick the crosshair reached the head."
       : `The first shot came ${Math.round(k.arrival_delay_ms)} ms after the crosshair reached the head.`);
   }
-  if (k.context) facts.push(`${sentence(k.context)}.`);
-  if (k.score != null) facts.push(`The model scores this kill ${k.score.toFixed(2)} out of 1.`);
+  if (k.distance != null) setting.push(`${Math.round(k.distance)} m away${k.walls_penetrated ? `, through ${k.walls_penetrated === 1 ? "a wall" : `${k.walls_penetrated} walls`}` : ""}.`);
+  if (k.context) setting.push(`${sentence(k.context)}.`);
+  if (k.score != null) setting.push(`The model scores this kill ${k.score.toFixed(2)} out of 1.`);
 
   const copy = copyButton(k.demo_command);
 
@@ -578,7 +689,10 @@ function killDetail(k, radarMeta, mapName, shooter) {
           el("span", {}, el("span", { class: "swatch", style: "background:repeating-linear-gradient(45deg,#f2f4f6 0 3px,#c9d0d7 3px 5px)" }), "enemy behind cover"),
           (k.shots_ms || []).length ? el("span", {}, el("span", { class: "swatch fire" }), "a shot") : null),
         el("p", { class: "legend" }, moments.length ? "Move along the trace, or use the slider, to step both players through the approach." : ""))),
-    el("ul", { class: "facts" }, facts.map((f) => el("li", {}, f))),
+    measured.length ? el("h3", {}, "What was measured") : null,
+    measured.length ? el("ul", { class: "facts measured" }, measured.map((f) => el("li", {}, f))) : null,
+    setting.length ? el("h3", {}, "The setting") : null,
+    setting.length ? el("ul", { class: "facts" }, setting.map((f) => el("li", {}, f))) : null,
     el("div", { class: "goto" }, el("code", {}, k.demo_command), copy),
     el("p", { class: "muted", style: "margin-top:0.5rem" }, "Paste it into the CS2 console with this demo open to watch the approach."));
 }
@@ -887,8 +1001,8 @@ function playerPanel(p, data) {
   if (p.rule_findings.length) {
     lines.push(el("h3", {}, "Hard limits broken"));
     lines.push(el("ul", {}, p.rule_findings.slice(0, 6).map((e) =>
-      el("li", { class: "finding" }, el("b", {}, `${sentence(e.severity)}. `), sentence(e.note),
-        e.tick != null ? el("span", { class: "muted" }, ` At tick ${e.tick}.`) : null))));
+      el("li", { class: "limit" }, el("b", {}, `${sentence(e.severity)}. `), sentence(e.note),
+        e.tick != null ? el("span", { class: "muted" }, `, at tick ${e.tick}.`) : "."))));
   }
 
   lines.push(el("h3", {}, "The judge"));
@@ -936,6 +1050,9 @@ function navigate(e, id, players, player, kill) {
   if (e.key === "ArrowRight" && at < kills.length - 1) go({ k: kills[at + 1].tick });
   else if (e.key === "ArrowLeft" && at > 0) go({ k: kills[at - 1].tick });
   else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    // up and down are how a keyboard scrolls a page. Only take them while the
+    // reader is actually in the timeline, or the detail column cannot be read.
+    if (!document.activeElement?.closest(".timeline")) return;
     const i = players.indexOf(player) + (e.key === "ArrowDown" ? 1 : -1);
     const next = players[i];
     if (next) go({ p: next.player_id, k: (next.top_kills[0] || next.kill_log[0] || {}).tick });

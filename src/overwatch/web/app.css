@@ -25,11 +25,17 @@
   --paper: #fbfcfd;
   --graphite: #1a1f24;
   --grid: #dde2e7;
-  --ct: #3e6fb0;
-  --t: #c98a1b;
   --flag: #b8336a;
   --muted: #5e666f;
   --tint: #eef1f4;
+
+  /* Team colours come in two strengths, because a mark on the radar's grey
+     field and a word on near-white paper are not the same job. Marks clear
+     3:1 (WCAG 1.4.11), ink clears 4.5:1 (1.4.3), on paper, tint and radar. */
+  --ct: #3e6fb0;      /* 4.98 paper / 4.51 tint / 3.73 radar */
+  --ct-ink: #35609b;  /* 6.20 paper / 5.62 tint / 4.65 radar */
+  --t: #a8700f;       /* 4.10 paper / 3.71 tint / 3.07 radar */
+  --t-ink: #8c5a08;   /* 5.71 paper / 5.17 tint / 4.28 radar */
 
   /* 1.25 scale from 16px */
   --s-1: 0.8rem;
@@ -38,6 +44,15 @@
   --s2: 1.5625rem;
   --s3: 1.953rem;
   --s4: 2.441rem;
+
+  /* spacing: 4px root, doubling. Anything new uses these, never a loose rem. */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
 
   --gutter: clamp(1rem, 3vw, 2.5rem);
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
@@ -223,6 +238,33 @@ button.small { font-size: var(--s-1); padding: 0.3em 0.8em; }
 .notes { margin: 0.75rem 0 0; padding: 0; list-style: none; }
 .notes li { max-width: 80ch; padding-left: 0.75rem; border-left: 3px solid var(--grid); margin: 0.4rem 0; color: var(--muted); }
 
+/* the answer, before its support */
+.finding {
+  margin: var(--space-4) 0 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--tint);
+  border-left: 3px solid var(--flag);
+  max-width: 72ch;
+}
+.finding.clear { border-left-color: var(--graphite); }
+.finding-line { font-size: var(--s1); line-height: 1.3; margin: 0; max-width: none; }
+.finding-line strong { font-stretch: 125%; font-weight: 700; }
+.finding-note { font-size: var(--s-1); margin: var(--space-2) 0 0; }
+.finding-who {
+  font: inherit; font-weight: 700; color: var(--flag);
+  background: none; border: 0; border-radius: 0; padding: 0;
+  text-decoration: underline; text-underline-offset: 0.18em; cursor: pointer;
+}
+
+/* a keyboard reader should not tab ~110 rings to reach the evidence */
+.skip {
+  position: absolute; left: -9999px;
+  font: inherit; font-weight: 600; font-size: var(--s-1);
+  color: var(--graphite); background: none; border: 0; border-radius: 0; padding: 0;
+  text-decoration: underline; text-underline-offset: 0.18em; cursor: pointer;
+}
+.skip:focus { position: static; display: inline-block; margin-bottom: var(--space-2); }
+
 .timeline-scroll { overflow-x: auto; margin: 0 calc(-1 * var(--gutter)); padding: 0 var(--gutter) 0.5rem; }
 .timeline {
   display: grid;
@@ -248,8 +290,21 @@ button.small { font-size: var(--s-1); padding: 0.3em 0.8em; }
 /* names stay in view while the rounds scroll sideways on a narrow screen */
 .timeline .lane-name, .timeline .head.name { position: sticky; left: 0; z-index: 4; background: var(--paper); }
 .timeline .lane-name.selected, .timeline .lane-name.row-hover { background: var(--tint); }
-.timeline .lane-score { display: flex; align-items: center; gap: 0.75rem; padding-left: 1rem; white-space: nowrap; height: 2.25rem; }
+.timeline .lane-score { display: flex; align-items: center; gap: var(--space-2); padding-left: var(--space-4); white-space: nowrap; height: 2.25rem; }
 .timeline .lane-score .value { font-weight: 700; min-width: 2.6em; text-align: right; }
+/* the sentence is support for the number and the meter, so it reads as support;
+   at 1200px this is also what keeps the verdict inside the viewport */
+.timeline .lane-score .muted, .timeline .lane-score .verdict { font-size: var(--s-1); }
+/* the percentile on a ruler, with the flag line marked, so "above 86%" against
+   "above 91%" is a length and a side of the line, not arithmetic */
+.timeline .meter { position: relative; flex: none; width: 3.5rem; height: 8px; background: var(--grid); border-radius: 1px; }
+.timeline .meter .fill { display: block; width: var(--fill); height: 100%; background: var(--muted); border-radius: 1px; }
+.timeline .meter::after {
+  content: ""; position: absolute; top: -2px; bottom: -2px; left: var(--line);
+  width: 1.5px; background: var(--graphite);
+}
+.timeline .meter.flagged .fill { background: var(--flag); }
+.timeline .meter.thin { opacity: 0.45; }
 .timeline [data-player].selected { background: var(--tint); }
 .timeline .row-hover { background: var(--tint); }
 
@@ -289,6 +344,8 @@ button.small { font-size: var(--s-1); padding: 0.3em 0.8em; }
 }
 .verdict.cheating { background: var(--flag); color: var(--paper); box-shadow: none; }
 .verdict.unclear { background: var(--tint); box-shadow: none; }
+/* flagged, judge not run: the word, in the colour that already means "look here" */
+.verdict.flagged-chip { color: var(--flag); box-shadow: inset 0 0 0 1.5px var(--flag); }
 
 .detail {
   display: grid;
@@ -328,8 +385,41 @@ button.small { font-size: var(--s-1); padding: 0.3em 0.8em; }
 .trace-key .swatch { display: inline-block; width: 1.4em; height: 0.8em; vertical-align: -0.05em; margin-right: 0.35em; box-shadow: inset 0 0 0 1px var(--grid); }
 .trace-key .swatch.fire { width: 2px; height: 0.9em; background: var(--graphite); box-shadow: none; margin-left: 0.5em; margin-right: 0.6em; }
 
-.facts { margin: 1rem 0; padding: 0; list-style: none; }
-.facts li { padding: 0.3rem 0; border-top: 1px solid var(--grid); max-width: 72ch; }
+/* the moments to watch, ranked and readable */
+.moments { margin: 0 0 var(--space-5); }
+.moments h2 { font-size: var(--s0); margin-bottom: var(--space-2); }
+.moments ol { list-style: none; counter-reset: moment; margin: 0; padding: 0; }
+.moments li { counter-increment: moment; }
+.moments button {
+  display: grid;
+  /* count | round | what | score, with the reason on a second line. The detail
+     column is ~790px at 1440 and ~640px at 1200: never room for five abreast. */
+  grid-template-columns: 1.5rem 6rem minmax(0, 1fr) 2.6rem;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  width: 100%; min-height: 2.75rem;
+  font: inherit; color: var(--graphite); background: none;
+  border: 0; border-top: 1px solid var(--grid); border-radius: 0;
+  padding: var(--space-2) var(--space-1) var(--space-2) 0;
+  text-align: left; cursor: pointer;
+}
+.moments li:last-child button { border-bottom: 1px solid var(--grid); }
+.moments button::before { content: counter(moment); font-stretch: 125%; font-weight: 700; color: var(--muted); }
+.moments button:hover { background: var(--tint); }
+.moments .when { font-stretch: 125%; font-weight: 700; white-space: nowrap; }
+.moments .why { grid-column: 3 / 4; grid-row: 2; font-size: var(--s-1); }
+.moments .kill-score { grid-column: 4; grid-row: 1; font-weight: 700; text-align: right; }
+/* the chosen moment is named by the arrow as well as the tint: never colour alone */
+.moments li.here button { background: var(--tint); font-weight: 600; }
+.moments li.here button::after {
+  content: "\2192  shown below"; grid-column: 2; grid-row: 2;
+  font-size: var(--s-1); font-weight: 400; color: var(--muted); white-space: nowrap;
+}
+
+.facts { margin: var(--space-2) 0 var(--space-5); padding: 0; list-style: none; }
+.facts li { padding: var(--space-2) 0; border-top: 1px solid var(--grid); max-width: 72ch; }
+/* the measurements an accusation could rest on read louder than the setting */
+.facts.measured li { font-size: var(--s1); line-height: 1.32; }
 .goto { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin-top: 1rem; }
 .goto code { font: 500 var(--s0) var(--mono); padding: 0.45em 0.7em; background: var(--tint); border-radius: 3px; }
 
@@ -337,7 +427,7 @@ button.small { font-size: var(--s-1); padding: 0.3em 0.8em; }
 .player .sub { margin-top: 0.4rem; }
 .player ul { padding-left: 1.1rem; margin: 0.3rem 0; }
 .player li { margin: 0.3rem 0; max-width: 64ch; }
-.player .finding b { font-stretch: 87%; }
+.player .limit b { font-stretch: 87%; }
 details { margin-top: 1.5rem; }
 summary { cursor: pointer; font-weight: 600; }
 details pre { font: 12.5px/1.5 var(--mono); white-space: pre-wrap; background: var(--tint); padding: 1rem; border-radius: 3px; margin: 0.75rem 0 0; font-variant-ligatures: none; }
