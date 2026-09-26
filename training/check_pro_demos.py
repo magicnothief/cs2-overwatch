@@ -48,7 +48,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 from overwatch import paths
-from overwatch.layers.l4_judge.judge import DEFAULT_MODEL, Judge
+from overwatch.layers.l4_judge.judge import DEFAULT_GENERATION, DEFAULT_MODEL, Judge
 from overwatch.pipeline.analyze import analyze_demo
 from overwatch.pipeline.scorer import Scorer
 from overwatch.settings import load_settings
@@ -87,6 +87,7 @@ def run(
     *,
     out: Path,
     model: Path,
+    generation: int,
     keep: bool,
     gpu_layers: int | str,
     scorer_path: Path | None = None,
@@ -95,7 +96,12 @@ def run(
 
     chosen = load_settings()
     scorer = Scorer(scorer_path) if scorer_path else Scorer()
-    judge = Judge(model, gpu_layers=gpu_layers, prefer_cuda=chosen.prefer_cuda)
+    judge = Judge(
+        model,
+        generation=generation,
+        gpu_layers=gpu_layers,
+        prefer_cuda=chosen.prefer_cuda,
+    )
     print(f"judge: {model.name} on {judge.describe()}", flush=True)
     raw = paths.DATA / "raw" / "hltv"
     for n, remote in enumerate(demos, 1):
@@ -266,6 +272,14 @@ def main() -> None:
     )
     parser.add_argument("--model", type=Path, default=DEFAULT_MODEL, help="judge GGUF")
     parser.add_argument(
+        "--judge-generation",
+        type=int,
+        default=DEFAULT_GENERATION,
+        help="which fine-tune generation --model is; decides which measurements its "
+        "evidence shows (l4_judge.rendering.FEATURE_SINCE_JUDGE). The pinned judge's "
+        f"generation ({DEFAULT_GENERATION}) by default",
+    )
+    parser.add_argument(
         "--scorer",
         type=Path,
         default=None,
@@ -280,6 +294,7 @@ def main() -> None:
             sample(args.per_map, args.seed),
             out=args.out,
             model=args.model,
+            generation=args.judge_generation,
             keep=args.keep,
             gpu_layers=gpu,
             scorer_path=args.scorer,

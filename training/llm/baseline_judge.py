@@ -24,6 +24,7 @@ import polars as pl
 
 from overwatch.layers.l4_judge import Judge, PlayerCase
 from overwatch.layers.l4_judge.judge import STOCK_MODEL
+from overwatch.layers.l4_judge.rendering import LATEST_JUDGE
 
 ROOT = Path(__file__).resolve().parents[2]
 PROCESSED = ROOT / "data" / "processed"
@@ -54,7 +55,14 @@ def main() -> None:
     ]
 
     print(f"{len(selected)} cases, model {args.model.name}", flush=True)
-    judge = Judge(args.model, threads=args.threads, gpu_layers=args.gpu_layers)
+    # the stock model was fine-tuned on nothing, so it reads the newest format: the
+    # one the fine-tune this number is compared against was trained on
+    judge = Judge(
+        args.model,
+        generation=LATEST_JUDGE,
+        threads=args.threads,
+        gpu_layers=args.gpu_layers,
+    )
     print(f"running on {judge.describe()}", flush=True)
 
     results, started = [], time.perf_counter()

@@ -16,6 +16,12 @@ Three rules shape the format:
 3. **It stays short.** A mid-range CPU generates roughly 10 tokens a second, so a
    case is kept near 300 tokens and the verdict is a small JSON object. A report
    on ten players should take a minute, not twenty.
+4. **A judge sees only what it was trained on.** Measurements are added to the
+   format ahead of the fine-tune that learns them, so which ones a case shows
+   depends on the judge generation it is rendered for — FEATURE_SINCE_JUDGE, and
+   the `judge` argument to render_case. Rule 1 above is why this is not cosmetic:
+   the clean reference a judge shipped with has no baseline for a measurement that
+   came later, so showing it anyway puts a bare number in front of the model.
 
 Four of the fields below — the player id, the map, the lobby rank and each
 weapon — are strings a demo *tells* us, and a demo comes from a stranger. Written
@@ -34,6 +40,7 @@ import re
 
 from pydantic import BaseModel, Field
 
+from overwatch import models
 from overwatch.layers.l2_perception.awareness import describe
 from overwatch.schemas.evidence import Evidence
 
@@ -140,6 +147,40 @@ FEATURE_LABELS: dict[str, tuple[str, str]] = {
     "sniper_share": ("share of kills taken with a sniper rifle", "neither"),
 }
 
+#: Measurements newer than the first fine-tune, and the generation whose training
+#: data first held them. A judge is shown only the measurements it was trained on.
+#:
+#: The rule exists because the alternative is silent: v4 was fine-tuned before
+#: `snap_kills` and `arrival_shot_share` were measured, so putting them in its prompt
+#: is an input shape it has never seen, in positions it has never seen, and nothing
+#: has measured what that does to its verdicts. On the pinned reference it is worse
+#: than untested — that reference has no clean baseline for either, so both render as
+#: bare numbers and break rule 1 of this module: every figure comes with a baseline.
+#:
+#: A measurement not named here has been in the format since v1. Adding one to
+#: FEATURE_LABELS is therefore not enough to show it to the pinned judge: it needs an
+#: entry here too, and models.JUDGE_GENERATION at or above that entry. Showing these
+#: two again is exactly that — the same commit that moves the pin to the redesigned
+#: judge (MAG-11), and nothing else.
+FEATURE_SINCE_JUDGE: dict[str, int] = {
+    "snap_kills": 5,
+    "arrival_shot_share": 5,
+}
+
+#: The newest judge this format knows how to feed. Training, annotation and the
+#: baseline run render for this one, not for the pinned judge: a fine-tune has to be
+#: trained on every measurement before a pin can ever show it one.
+LATEST_JUDGE = 5
+
+
+def features_for(judge: int) -> dict[str, tuple[str, str]]:
+    """The measurements one generation of judge may be shown, in the text's order."""
+    return {
+        key: label
+        for key, label in FEATURE_LABELS.items()
+        if FEATURE_SINCE_JUDGE.get(key, 1) <= judge
+    }
+
 
 #: A window starts 2 s before the kill, so a "reaction" at least that long really
 #: means the enemy was already on screen when the window opened.
@@ -211,8 +252,13 @@ def unseen_numbers(sentence: str, evidence: str) -> list[str]:
     return unseen
 
 
-def render_case(case: PlayerCase) -> str:
-    """Render one player's evidence as the model's input text."""
+def render_case(case: PlayerCase, *, judge: int = models.JUDGE_GENERATION) -> str:
+    """Render one player's evidence as the model's input text.
+
+    `judge` is the fine-tune generation the text is for, and it decides which
+    measurements appear (FEATURE_SINCE_JUDGE). It defaults to the pinned judge, so a
+    caller that says nothing gets text the model in models.JUDGE was trained to read.
+    """
     # the demo's own strings, made harmless: see the module docstring
     player_id = plain(case.player_id, "player") or "unknown"
     map_name, rank = plain(case.map_name, "map"), plain(case.rank, "rank")
@@ -225,7 +271,7 @@ def render_case(case: PlayerCase) -> str:
         "MEASUREMENTS (player vs typical clean player)",
     ]
 
-    for key, (description, suspicious_direction) in FEATURE_LABELS.items():
+    for key, (description, suspicious_direction) in features_for(judge).items():
         if key not in case.features:
             continue
         value = case.features[key]

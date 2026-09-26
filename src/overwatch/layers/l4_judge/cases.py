@@ -197,6 +197,8 @@ def build_case(
         window_ticks: per-tick windows, for the trajectories.
         rules: Layer 1 findings as rows (rules.evidence_rows).
     """
+    # every measurement the format knows, whichever judge is pinned: the case is
+    # data, and rendering.render_case decides what a given judge is shown
     features = [key for key in FEATURE_LABELS if player.get(key) is not None]
     case = PlayerCase(
         match_id=player["match_id"],

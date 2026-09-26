@@ -8,7 +8,7 @@ import inspect
 import random
 
 from overwatch.layers.l4_judge import MomentSummary, PlayerCase, render_case
-from overwatch.layers.l4_judge.rendering import unseen_numbers
+from overwatch.layers.l4_judge.rendering import LATEST_JUDGE, unseen_numbers
 from overwatch.layers.l4_judge.targets import build_target, case_rng, verdict_for
 from overwatch.layers.l4_judge.verdict import VerdictLabel
 from overwatch.schemas.evidence import Evidence, Severity
@@ -44,6 +44,16 @@ def _case(**features) -> PlayerCase:
         baselines=BASELINES,
         clean_lines=LINES,
     )
+
+
+def _evidence(case: PlayerCase) -> str:
+    """The text a target is checked against: the newest judge's.
+
+    A target is only ever written for the judge being trained, never for the pinned
+    one (targets module docstring), and that judge reads every measurement the format
+    has — including the ones a pinned older judge is not shown.
+    """
+    return render_case(case, judge=LATEST_JUDGE)
 
 
 def test_verdict_agrees_with_probability() -> None:
@@ -98,7 +108,7 @@ def test_reasons_only_cite_numbers_that_appear_in_the_evidence() -> None:
     """The model must never learn to invent figures."""
     case = _case(wall_aim_share=0.64, straight_share=0.62, sniper_share=0.1)
     target = build_target(case, random.Random(0))
-    evidence = render_case(case)
+    evidence = _evidence(case)
     for reason in target.reasons:
         for token in reason.split():
             if token.rstrip("%,.").replace(".", "").isdigit() and len(token) > 2:
@@ -218,7 +228,7 @@ def test_every_cited_number_is_one_the_model_was_shown() -> None:
         baselines=baselines,
         clean_lines=LINES,
     )
-    evidence = render_case(case)
+    evidence = _evidence(case)
     points = evidence_points(case)
     assert len(points) == 6
     for sentence, _, _ in points:
@@ -241,7 +251,7 @@ def test_the_lines_a_target_is_decided_by_are_in_the_text() -> None:
     """v2 leaned on the behaviour score because the text showed clean medians but
     not the 95th/99th-percentile lines its targets were decided by."""
     case = _case(straight_share=0.6, corrections_mean=0.2)
-    text = render_case(case)
+    text = _evidence(case)
     assert "95% of clean players are below 0.48, 99% below 0.67" in text
     assert "95% of clean players are above 0.58, 99% above 0.25" in text
 

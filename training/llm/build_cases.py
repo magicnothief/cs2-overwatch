@@ -27,6 +27,7 @@ import polars as pl
 
 from overwatch.layers.l4_judge import PlayerCase, render_case
 from overwatch.layers.l4_judge.cases import KILL_COLUMNS, build_case, clean_baselines
+from overwatch.layers.l4_judge.rendering import LATEST_JUDGE
 from overwatch.layers.l4_judge.targets import clean_lines
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -155,7 +156,8 @@ def main() -> None:
                         "player_id": case.player_id,
                         "label": label,
                         "score": case.score,
-                        "evidence": render_case(case),
+                        # the newest format: what the next fine-tune learns to read
+                        "evidence": render_case(case, judge=LATEST_JUDGE),
                         "case": case.model_dump(mode="json"),
                     }
                 )
@@ -168,7 +170,7 @@ def main() -> None:
     print("\n--- example (cheater) ---")
     for case, label in cases:
         if label == "cheater":
-            print(render_case(case))
+            print(render_case(case, judge=LATEST_JUDGE))
             break
 
 

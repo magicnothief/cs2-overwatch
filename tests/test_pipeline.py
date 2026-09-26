@@ -14,7 +14,7 @@ import polars as pl
 import pytest
 
 from overwatch.layers.l3_behavior.sequences import CHANNELS
-from overwatch.layers.l4_judge.judge import JudgeResult
+from overwatch.layers.l4_judge.judge import DEFAULT_GENERATION, JudgeResult
 from overwatch.layers.l4_judge.verdict import CheatType, Verdict, VerdictLabel
 from overwatch.parsing import ParsedMatch
 from overwatch.pipeline import Scorer, analyze_match, render_text
@@ -68,6 +68,8 @@ class FakeJudge:
     """Records what it was shown and always says the same thing."""
 
     model_path = Path("fake.gguf")
+    #: a real judge carries the generation whose evidence format it reads
+    generation = DEFAULT_GENERATION
 
     def __init__(self) -> None:
         self.seen = []

@@ -267,7 +267,8 @@ def analyze_match(
                 rules=rules,
             ).model_copy(update={"player_id": report.judge_alias})
             result = judge.judge(case)
-            report.judge_evidence = render_case(case)
+            # this judge's format, not the newest one: see rendering.FEATURE_SINCE_JUDGE
+            report.judge_evidence = render_case(case, judge=judge.generation)
             report.verdict = result.verdict
             report.judge_error = result.error
     lap("layer 4")

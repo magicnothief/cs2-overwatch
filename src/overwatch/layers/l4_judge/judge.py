@@ -27,6 +27,10 @@ from overwatch.layers.l4_judge.verdict import VERDICT_SCHEMA, Verdict
 #: exported from Unsloth Studio. Earlier versions and how they compare:
 #: training/llm/README.md.
 DEFAULT_MODEL = models.JUDGE.local
+#: Which generation DEFAULT_MODEL is, and so which measurements it is shown
+#: (rendering.FEATURE_SINCE_JUDGE). A caller loading some other GGUF must say which
+#: generation it is, or it gets the pinned judge's evidence format.
+DEFAULT_GENERATION = models.JUDGE_GENERATION
 #: The untuned model every fine-tune is measured against (baseline_judge.py).
 STOCK_MODEL = paths.MODELS / "llm" / "qwen3.5-4b-instruct-Q4_K_M.gguf"
 #: Where the downloaded llama.cpp builds live.
@@ -64,6 +68,7 @@ class Judge:
         self,
         model_path: str | Path = DEFAULT_MODEL,
         *,
+        generation: int = DEFAULT_GENERATION,
         context: int = 4096,
         threads: int | None = None,
         gpu_layers: int | str = "auto",
@@ -74,6 +79,9 @@ class Judge:
     ) -> None:
         """Args:
         model_path: the GGUF to load.
+        generation: which fine-tune generation that GGUF is, which decides the
+            measurements its evidence shows (rendering.FEATURE_SINCE_JUDGE). The
+            default is the pinned judge's; pass it when loading any other model.
         context: prompt + answer budget, in tokens. Cases run to ~1,700 tokens
             and answers may take 400: 2,048 was too small for the longest.
         threads: CPU threads; llama.cpp picks a sensible default when None.
@@ -88,6 +96,7 @@ class Judge:
         if not self.model_path.exists():
             msg = f"no GGUF at {self.model_path}"
             raise FileNotFoundError(msg)
+        self.generation = generation
         self.seed = seed
         self.engine = server.start(
             self.model_path,
@@ -114,7 +123,9 @@ class Judge:
 
     def judge(self, case: PlayerCase, *, max_tokens: int = 400) -> JudgeResult:
         """Read one player's evidence and return a structured verdict."""
-        return self.judge_text(render_case(case), max_tokens=max_tokens)
+        return self.judge_text(
+            render_case(case, judge=self.generation), max_tokens=max_tokens
+        )
 
     def judge_text(self, evidence: str, *, max_tokens: int = 400) -> JudgeResult:
         started = time.perf_counter()

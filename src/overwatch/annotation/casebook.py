@@ -24,7 +24,11 @@ from functools import cached_property
 from pathlib import Path
 
 from overwatch.annotation.store import case_key
-from overwatch.layers.l4_judge.rendering import PlayerCase, render_case
+from overwatch.layers.l4_judge.rendering import (
+    LATEST_JUDGE,
+    PlayerCase,
+    render_case,
+)
 from overwatch.layers.l4_judge.targets import (
     build_target,
     case_rng,
@@ -56,8 +60,12 @@ class CaseBook:
         return PlayerCase.model_validate(self._rows[key]["case"])
 
     def evidence(self, key: str) -> str:
-        """Rendered now, not read from the file: the renderer is the contract."""
-        return render_case(self.case(key))
+        """Rendered now, not read from the file: the renderer is the contract.
+
+        For the newest judge, not the pinned one: an annotation is a training target,
+        and the fine-tune it trains reads every measurement (rendering.LATEST_JUDGE).
+        """
+        return render_case(self.case(key), judge=LATEST_JUDGE)
 
     def label(self, key: str) -> str:
         return self._rows[key]["label"]

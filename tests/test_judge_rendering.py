@@ -8,12 +8,19 @@ import json
 
 import pytest
 
+from overwatch import models
 from overwatch.layers.l4_judge import (
     MomentSummary,
     PlayerCase,
     Verdict,
     VerdictLabel,
     render_case,
+)
+from overwatch.layers.l4_judge.rendering import (
+    FEATURE_LABELS,
+    FEATURE_SINCE_JUDGE,
+    LATEST_JUDGE,
+    features_for,
 )
 from overwatch.schemas.evidence import Evidence, Severity
 
@@ -215,3 +222,110 @@ class TestACraftedDemoCannotWriteTheAccusation:
     @pytest.mark.parametrize("rank", ["Gold Nova Master", "Premier 12,431", "Silver 1"])
     def test_a_real_lobby_rank_survives(self, rank: str) -> None:
         assert rank in render_case(_case(rank=rank))
+
+
+#: The measurements judge v4 was fine-tuned on. Frozen on purpose: it is the list a
+#: widening of FEATURE_LABELS has to disagree with, so that adding a measurement
+#: without saying which judge first saw it fails here instead of silently reaching a
+#: model that was never trained on it.
+V4_MEASUREMENTS = frozenset(
+    {
+        "straight_share",
+        "corrections_mean",
+        "wall_aim_share",
+        "visible_share",
+        "fast_kills",
+        "angle_at_first_visible_median",
+        "zero_motion_share",
+        "never_visible_share",
+        "sniper_share",
+    }
+)
+
+
+def _measurements(text: str) -> list[str]:
+    """The measurement lines a case shows, described as the model reads them."""
+    lines = text.splitlines()
+    start = lines.index("MEASUREMENTS (player vs typical clean player)") + 1
+    shown = []
+    for line in lines[start:]:
+        if not line.startswith("- "):
+            break
+        shown.append(line.removeprefix("- ").split(":")[0])
+    return shown
+
+
+class TestAJudgeOnlyReadsWhatItWasTrainedOn:
+    """`snap_kills` and `arrival_shot_share` were measured for judge v5. Rendered into
+    v4's prompt they are an input shape it has never seen, and — because the clean
+    reference v4 shipped with has no baseline for either — bare numbers, which breaks
+    the first rule of the format. So the text follows the pinned judge, not the code.
+    """
+
+    def _both(self) -> PlayerCase:
+        return _case(
+            features={
+                "straight_share": 0.62,
+                "wall_aim_share": 0.64,
+                "snap_kills": 7.0,
+                "arrival_shot_share": 0.46,
+            },
+            baselines={
+                "straight_share": 0.17,
+                "wall_aim_share": 0.38,
+                "snap_kills": 1.0,
+                "arrival_shot_share": 0.09,
+            },
+        )
+
+    def test_v4_is_shown_neither_measurement(self) -> None:
+        shown = _measurements(render_case(self._both(), judge=4))
+        assert shown == [
+            "flicks that never change direction",
+            "time aimed at an enemy they could not see",
+        ]
+
+    def test_v5_is_shown_both_measurements(self) -> None:
+        text = render_case(self._both(), judge=LATEST_JUDGE)
+        assert _measurements(text) == [
+            "flicks that never change direction",
+            "time aimed at an enemy they could not see",
+            "kills with a turn over 200 deg/s on the kill tick",
+            "kills fired on the very tick the crosshair reached the head",
+        ]
+        # and with their baselines, as every figure in this format is
+        assert (
+            "- kills with a turn over 200 deg/s on the kill tick: 7.0 "
+            "(clean 1.0, higher is suspicious)" in text
+        )
+        assert (
+            "- kills fired on the very tick the crosshair reached the head: 0.46 "
+            "(clean 0.09, higher is suspicious)" in text
+        )
+
+    def test_the_default_is_the_pinned_judge(self) -> None:
+        """A caller that says nothing must get the text models.JUDGE can read."""
+        case = self._both()
+        assert render_case(case) == render_case(case, judge=models.JUDGE_GENERATION)
+
+    def test_a_new_measurement_must_say_which_judge_first_saw_it(self) -> None:
+        undeclared = {
+            key
+            for key in FEATURE_LABELS
+            if key not in V4_MEASUREMENTS and key not in FEATURE_SINCE_JUDGE
+        }
+        assert not undeclared, (
+            f"{sorted(undeclared)} would be rendered into the pinned judge's prompt. "
+            "Give each an entry in rendering.FEATURE_SINCE_JUDGE saying which judge "
+            "was trained on it."
+        )
+
+    def test_no_judge_reads_a_measurement_added_after_it(self) -> None:
+        for generation in range(1, LATEST_JUDGE + 1):
+            shown = set(features_for(generation))
+            later = {
+                k for k, since in FEATURE_SINCE_JUDGE.items() if since > generation
+            }
+            assert not shown & later, (
+                f"v{generation} would read {sorted(shown & later)}"
+            )

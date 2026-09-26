@@ -25,6 +25,13 @@ Four things are deliberately taught:
 
 Human annotations (overwatch.annotation) replace these targets case by case; the
 generated ones are the fallback and the yardstick annotations are compared with.
+
+A target is only ever written for the judge being *trained*, never for the pinned
+one — build_training_set and the annotation tool are the only callers — so CHECKS
+and clean_lines cover every measurement the format knows, including the ones the
+pinned judge is not shown (rendering.FEATURE_SINCE_JUDGE). Both render their
+evidence with rendering.LATEST_JUDGE, which is what keeps point 4 above true: a
+reason never cites a number the text the model read does not contain.
 """
 
 from __future__ import annotations

@@ -21,6 +21,7 @@ import polars as pl
 
 from overwatch.annotation import AnnotationStore, case_key, evidence_hash
 from overwatch.layers.l4_judge import SYSTEM_PROMPT, PlayerCase, render_case
+from overwatch.layers.l4_judge.rendering import LATEST_JUDGE
 from overwatch.layers.l4_judge.targets import (
     build_target,
     case_rng,
@@ -56,7 +57,9 @@ def main() -> None:
 
     for row in rows:
         case = PlayerCase.model_validate(row["case"])
-        evidence = render_case(case)
+        # the judge being trained is the newest one, so it is trained on every
+        # measurement — including the ones the currently pinned judge is not shown
+        evidence = render_case(case, judge=LATEST_JUDGE)
         generated = build_target(
             case, case_rng(case.match_id, case.player_id, args.seed)
         )

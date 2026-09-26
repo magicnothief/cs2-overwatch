@@ -99,6 +99,12 @@ JUDGE = ModelFile(
     "8ef3824fed200541f456e3ebfc1aaa4d40533797255f4c31b583ccb14d697068",
     2_783_446_976,
 )
+#: Which fine-tune generation JUDGE is, and so which measurements it may be shown:
+#: a judge only ever reads the measurements its training data contained (see
+#: l4_judge.rendering.FEATURE_SINCE_JUDGE). This number moves in the same commit as
+#: the pin above and nowhere else — a measurement added for a later judge stays out
+#: of this one's prompt until the pin catches up with it.
+JUDGE_GENERATION = 4
 
 
 def missing(*, judge: bool = True) -> list[ModelFile]:
@@ -122,6 +128,7 @@ def download(files: list[ModelFile], progress: Progress | None = None) -> None:
 __all__ = [
     "DETECTOR",
     "JUDGE",
+    "JUDGE_GENERATION",
     "MODELS_REPO",
     "ModelFile",
     "download",
