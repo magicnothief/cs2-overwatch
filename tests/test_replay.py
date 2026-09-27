@@ -77,7 +77,15 @@ def _events() -> dict[str, pl.DataFrame]:
                     "victim_id": "B",
                     "weapon": "ak47",
                     "headshot": True,
-                }
+                },
+                # round 2: A falls to their death; the demo calls A the attacker
+                {
+                    "tick": 380,
+                    "attacker_id": "A",
+                    "victim_id": "A",
+                    "weapon": "world",
+                    "headshot": False,
+                },
             ]
         ),
         "weapon_fire": ev(
@@ -175,6 +183,7 @@ def test_events_land_in_their_round(tmp_path: Path) -> None:
     assert first["fires"] == [[60, 120, 1, 2]]
     # an expiry from before the detonation is another smoke's
     assert second["smokes"] == [[300, 400, 0, 0]]
+    assert second["deaths"] == [[380, ids.index("A"), -1, "world", False, -200, 0]]
     assert second["bomb"][0] == [210, "pickup", ids.index("A"), -200, 0]
     assert second["bomb"][1][:2] == [330, "plant"]
 

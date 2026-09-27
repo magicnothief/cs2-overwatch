@@ -379,7 +379,10 @@ def build_replay(
                     [
                         d["tick"],
                         index.get(d["victim_id"], -1),
-                        index.get(str(d["attacker_id"]), -1),
+                        # a fall or the bomb: the demo names the victim as attacker
+                        -1
+                        if str(d["attacker_id"]) == d["victim_id"]
+                        else index.get(str(d["attacker_id"]), -1),
                         d.get("weapon"),
                         bool(d.get("headshot")),
                         None if d["x"] is None else round(d["x"]),
