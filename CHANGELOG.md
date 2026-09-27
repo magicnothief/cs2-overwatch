@@ -19,6 +19,13 @@ Each version's section becomes its release notes on GitHub. Newest first.
   add one. A replay takes about 0.1 s of analysis and 0.1 to 1 MB beside the
   report.
 
+**The timeline**
+- Each round's deciding kill was drawn in the next round's column, because the
+  game's round counter moves on the very tick that kill lands, and the time after
+  the match showed up as an extra, empty round. A round is now its play time,
+  from the end of its buy time to the next one, the same in the timeline and the
+  replay. Reports analysed before keep their old columns.
+
 ## 0.4.0 (2026-09-27)
 
 **The report**

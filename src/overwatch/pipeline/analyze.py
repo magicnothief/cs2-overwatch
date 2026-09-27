@@ -48,6 +48,7 @@ from overwatch.pipeline.report import (
     RoundSpan,
     goto,
 )
+from overwatch.pipeline.rounds import round_bounds
 from overwatch.pipeline.scorer import Scorer
 from overwatch.schemas.evidence import Evidence, Severity
 
@@ -341,17 +342,20 @@ def _findings(rules: pl.DataFrame | None, player_id: str) -> list[Evidence]:
 
 
 def round_spans(ticks: pl.DataFrame) -> list[RoundSpan]:
-    """Each round's first and last tick. `round` counts rounds already played."""
-    spans = (
-        ticks.group_by("round")
-        .agg(start=pl.col("tick").min(), end=pl.col("tick").max())
-        .drop_nulls("round")
-        .sort("round")
-    )
+    """Each round's play time, as pipeline/rounds.py defines it (end inclusive)."""
     return [
-        RoundSpan(number=int(r) + 1, start_tick=int(a), end_tick=int(b))
-        for r, a, b in spans.iter_rows()
+        RoundSpan(number=int(n), start_tick=int(a), end_tick=int(b) - 1)
+        for n, a, b in round_bounds(ticks).iter_rows()
     ]
+
+
+def round_of(rounds: list[RoundSpan], tick: int) -> int | None:
+    """The round a tick falls in; a tick in the buy time counts for the round before
+    it, and one before the first round (warmup) for the first."""
+    if not rounds:
+        return None
+    at = bisect.bisect_right([r.start_tick for r in rounds], tick) - 1
+    return rounds[max(at, 0)].number
 
 
 def side_switches(ticks: pl.DataFrame) -> list[int]:
@@ -483,12 +487,6 @@ def _kill_reports(
         if "shot" in window_ticks.columns
         else {}
     )
-    starts = [r.start_tick for r in rounds]
-
-    def round_of(tick: int) -> int | None:
-        at = bisect.bisect_right(starts, tick) - 1
-        return rounds[at].number if at >= 0 else None
-
     reports = []
     for m in pick_moments(kills, match_id, player_id, limit=kills.height):
         path, sides = _path(tracks, m.window_uid)
@@ -496,7 +494,7 @@ def _kill_reports(
         reports.append(
             KillReport(
                 tick=m.tick,
-                round=round_of(m.tick),
+                round=round_of(rounds, m.tick),
                 victim=names.get(victim) or victim,
                 weapon=m.weapon,
                 headshot=m.headshot,

@@ -30,3 +30,5 @@ tools/
 # local run logs and Claude Code's per-machine settings
 /logs/
 /.claude/settings.local.json
+# the app's settings, kept in the checkout when it runs from one
+/settings.json

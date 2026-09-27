@@ -8,10 +8,9 @@ and the enemy is on their screen. Not the game's own `spotted` flag: a tick
 before a gun kill it marks the victim as seen by the attacker only 64% of the
 time on CS2CD (docs/evals/2026-09-27-replay-marks-gate.md).
 
-A round here is play time: from the end of its freeze to the start of the next
-round's freeze, so what happens after the round is decided (exit kills, saves)
-is in it. The report's RoundSpan is wider (it starts at the round counter's
-change); the replay does not need the buy time.
+A round is play time, as pipeline/rounds.py defines it for the report too: from
+the end of its freeze to the start of the next round's freeze, so what happens
+after the round is decided (exit kills, saves) is in it.
 
 The file is one JSON object, gzipped, laid out for the page rather than for
 Python: per round, one array per player per quantity, aligned to that round's
@@ -37,6 +36,7 @@ from overwatch.layers.l2_perception.geometry.occlusion import (
 )
 from overwatch.layers.l3_behavior.shots import NOT_AIMED
 from overwatch.parsing.types import ParsedMatch
+from overwatch.pipeline.rounds import round_bounds
 
 #: The file's layout; the page refuses a version it does not know.
 VERSION = 1
@@ -112,34 +112,6 @@ def sightings(
         .with_columns(sees=pl.col("los").fill_null(False) & in_field_of_view())
         .drop("a", "b", "los")
     )
-
-
-def round_bounds(ticks: pl.DataFrame) -> pl.DataFrame:
-    """Each round's play time: number (1-based), start tick, end tick (exclusive).
-
-    Starts after the round's last freeze tick; ends where the next round's freeze
-    starts, or with the demo.
-    """
-    per = (
-        ticks.drop_nulls("round")
-        .group_by("round")
-        .agg(
-            first=pl.col("tick").min(),
-            last=pl.col("tick").max(),
-            freeze_first=pl.col("tick").filter(pl.col("is_freeze")).min(),
-            freeze_last=pl.col("tick").filter(pl.col("is_freeze")).max(),
-        )
-        .sort("round")
-    )
-    return per.select(
-        number=(pl.col("round") + 1).cast(pl.Int32),
-        start=pl.coalesce(pl.col("freeze_last") + 1, pl.col("first")).cast(pl.Int32),
-        end=pl.coalesce(
-            pl.col("freeze_first").shift(-1),
-            pl.col("first").shift(-1),
-            pl.col("last") + 1,
-        ).cast(pl.Int32),
-    ).filter(pl.col("end") > pl.col("start"))
 
 
 def _in_round(frame: pl.DataFrame, bounds: pl.DataFrame) -> pl.DataFrame:

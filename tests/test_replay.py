@@ -122,13 +122,14 @@ def _build(tmp_path: Path, triangles: np.ndarray = WALL, **ticks) -> dict:
 
 def test_rounds_are_play_time_from_freeze_end_to_the_next_freeze() -> None:
     bounds = replay.round_bounds(_ticks())
-    assert bounds.rows() == [(1, 32, 200), (2, 232, 400)]
+    # round 1 keeps tick 200, where the counter moved on (pipeline/rounds.py)
+    assert bounds.rows() == [(1, 32, 201), (2, 232, 400)]
 
 
 def test_every_player_has_one_value_per_sample(tmp_path: Path) -> None:
     first = _build(tmp_path, gap=range(60, 80))["rounds"][0]
     assert first["t0"] == 32
-    expected = (200 - 32) // replay.SAMPLE_TICKS
+    expected = len(range(32, 201, replay.SAMPLE_TICKS))
     a, b = first["players"]
     for field in ("x", "y", "z", "yaw", "hp", "blind", "sees"):
         assert len(a[field]) == len(b[field]) == expected, field
@@ -170,7 +171,7 @@ def test_events_land_in_their_round(tmp_path: Path) -> None:
         [100, ids.index("B"), ids.index("A"), "ak47", True, 200, 0]
     ]
     # no expiry: 18 s, cut at the round's end
-    assert first["smokes"] == [[50, 200, 10, 20]]
+    assert first["smokes"] == [[50, 201, 10, 20]]
     assert first["fires"] == [[60, 120, 1, 2]]
     # an expiry from before the detonation is another smoke's
     assert second["smokes"] == [[300, 400, 0, 0]]
