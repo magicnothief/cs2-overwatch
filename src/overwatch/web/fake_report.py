@@ -9,17 +9,20 @@ the URL to open.
     OVERWATCH_HOME=/tmp/look python -m overwatch.web.fake_report
 
 Every name, Steam ID, score and tick below is invented. The shape is checked
-against MatchReport, so a field that moves breaks this loudly.
+against MatchReport, so a field that moves breaks this loudly. Each report also
+gets a round replay (pipeline/replay.py's layout) made up to match its kills.
 """
 
 from __future__ import annotations
 
+import functools
 import json
 import math
 import random
 import sys
 
 from overwatch import paths
+from overwatch.pipeline.replay import write_replay
 from overwatch.pipeline.report import goto
 
 REPORT_ID = "fake-de_dust2"
@@ -28,6 +31,115 @@ REPORT_ID = "fake-de_dust2"
 ATTACKER_FROM = (250.0, 2250.0)
 ATTACKER_TO = (700.0, 1850.0)
 VICTIM_AT = (1300.0, 500.0)
+
+#: Coarse routes over de_dust2, a waypoint every 3 s, rounded to 25 units: the
+#: shapes of routes in anonymised CS2CD rounds. The timing on them is invented.
+T_ROUTES = [
+    [
+        (-500, -800),
+        (-375, -450),
+        (-200, -525),
+        (350, -225),
+        (650, -200),
+        (425, -75),
+        (-50, 325),
+        (-150, 500),
+    ],
+    [
+        (-525, -750),
+        (-825, -775),
+        (-1375, -675),
+        (-1600, 0),
+        (-1650, 675),
+        (-1900, 1275),
+        (-2025, 1475),
+        (-1675, 1150),
+        (-1250, 1150),
+        (-925, 1375),
+    ],
+    [
+        (-750, -825),
+        (-1125, -600),
+        (-1525, 0),
+        (-1675, 700),
+        (-1925, 1300),
+        (-1875, 1900),
+    ],
+    [
+        (-425, -850),
+        (25, -525),
+        (-400, -400),
+        (-425, 225),
+        (-275, 525),
+        (-275, 625),
+        (-500, 450),
+    ],
+    [
+        (-1150, -800),
+        (-475, -650),
+        (150, -425),
+        (150, 250),
+        (-150, 625),
+        (-475, 1025),
+        (-450, 1350),
+        (-350, 1600),
+        (-525, 1775),
+    ],
+]
+CT_ROUTES = [
+    [
+        (350, 2375),
+        (875, 2575),
+        (1350, 2775),
+        (150, 2375),
+        (-125, 2175),
+        (-850, 2225),
+        (-1450, 2025),
+        (-1750, 1900),
+        (-1600, 1800),
+    ],
+    [
+        (350, 2350),
+        (925, 2225),
+        (1375, 2550),
+        (1225, 2775),
+        (600, 2500),
+        (425, 1875),
+        (75, 1475),
+        (-75, 1500),
+        (-225, 1475),
+    ],
+    [
+        (175, 2450),
+        (675, 2300),
+        (500, 2325),
+        (375, 1800),
+        (350, 1575),
+        (325, 1475),
+        (25, 1525),
+        (-150, 1425),
+    ],
+    [
+        (250, 2475),
+        (-50, 2200),
+        (-725, 2350),
+        (-1325, 2675),
+        (-1575, 2825),
+        (-1700, 2675),
+        (-1800, 2550),
+    ],
+    [
+        (350, 2350),
+        (950, 2225),
+        (1425, 1825),
+        (1375, 1300),
+        (1425, 1525),
+        (1175, 2150),
+        (650, 2325),
+    ],
+]
+#: Buy time at the start of each synthetic round, in ticks.
+FREEZE_TICKS = 15 * 64
 
 NAMES = [
     ("swiftcurrent", "CT"),
@@ -153,7 +265,9 @@ def build(*, clean: bool = False) -> dict:
         kills = []
         for rnd in sorted(rng.sample(range(1, 19), rng.randint(6, 12))):
             span = rounds[rnd - 1]
-            tick = rng.randint(span["start_tick"] + 600, span["end_tick"] - 600)
+            tick = rng.randint(
+                span["start_tick"] + FREEZE_TICKS + 300, span["end_tick"] - 600
+            )
             kills.append(
                 _kill(
                     rng,
@@ -252,15 +366,192 @@ def build(*, clean: bool = False) -> dict:
     }
 
 
+def _along(route: list[tuple[int, int]], ticks: float) -> tuple[float, float, float]:
+    """Where a player walking `route` is after `ticks`, and which way they head."""
+    leg = ticks / (3 * 64)
+    i = min(int(leg), len(route) - 2)
+    f = min(1.0, leg - i)
+    (ax, ay), (bx, by) = route[i], route[i + 1]
+    return (
+        ax + f * (bx - ax),
+        ay + f * (by - ay),
+        math.degrees(math.atan2(by - ay, bx - ax)),
+    )
+
+
+def _spot(
+    i: int,
+    tick: int,
+    *,
+    route: list,
+    speed: list[float],
+    start: int,
+    deaths: dict[int, tuple[int, int, dict]],
+) -> tuple[float, float, float]:
+    """Player i at `tick`: along their route, pulled into the fight that kills them."""
+    x, y, heading = _along(route[i], (tick - start) * speed[i])
+    if i in deaths:
+        at, killer, _ = deaths[i]
+        w = max(0.0, 1 - (at - tick) / 192)
+        if w > 0:
+            kx, ky, _ = _along(route[killer], (at - start) * speed[killer])
+            x, y = x + w * (kx + 450 - x), y + w * (ky + 300 - y)
+    return x, y, heading
+
+
+def replay(report: dict) -> dict:
+    """A made-up round replay to go with `report`, in pipeline/replay.py's layout."""
+    rng = random.Random(9)
+    people = report["players"]
+    index = {p["name"]: i for i, p in enumerate(people)}
+    rounds = []
+    for span in report["rounds"]:
+        n = span["number"]
+        start = span["start_tick"] + FREEZE_TICKS
+        end = span["start_tick"] + 9000
+        t0 = start + (-start) % 4
+        ticks = range(t0, end, 4)
+        second_half = n > report["side_switches"][0]
+        side = [("T" if s == "CT" else "CT") if second_half else s for _, s in NAMES]
+        # who dies when, from the report's own kills, in order: a victim dies
+        # once, and the dead kill nobody
+        deaths: dict[int, tuple[int, int, dict]] = {}
+        kills = sorted(
+            (k["tick"], index[p["name"]], index[k["victim"]], k)
+            for p in people
+            for k in p["kill_log"]
+            if k["round"] == n
+        )
+        for tick, killer, victim, k in kills:
+            if victim in deaths or killer in deaths or side[victim] == side[killer]:
+                continue
+            deaths[victim] = (tick, killer, k)
+        speed = [rng.uniform(0.8, 1.25) for _ in people]
+        route = [
+            (T_ROUTES if side[i] == "T" else CT_ROUTES)[(i + n) % 5]
+            for i in range(len(people))
+        ]
+
+        spot = functools.partial(
+            _spot, route=route, speed=speed, start=start, deaths=deaths
+        )
+
+        blind_one, blind_at = rng.randrange(len(people)), start + rng.randint(640, 3200)
+        players = []
+        where = {i: [spot(i, tick) for tick in ticks] for i in range(len(people))}
+        for i in range(len(people)):
+            died = deaths.get(i, (end + 1,))[0]
+            xs, ys, zs, yaws, hps, blinds, sees = [], [], [], [], [], [], []
+            for j, tick in enumerate(ticks):
+                if tick >= died:
+                    for field in (xs, ys, zs, yaws, blinds, sees):
+                        field.append(None)
+                    hps.append(0)
+                    continue
+                x, y, heading = where[i][j]
+                enemies = [
+                    e
+                    for e in range(len(people))
+                    if side[e] != side[i] and deaths.get(e, (end + 1,))[0] > tick
+                ]
+                near = min(
+                    enemies,
+                    key=lambda e: math.dist((x, y), where[e][j][:2]),
+                    default=None,
+                )
+                yaw = heading + rng.uniform(-12, 12)
+                if near is not None and math.dist((x, y), where[near][j][:2]) < 1100:
+                    ex, ey, _ = where[near][j]
+                    yaw = math.degrees(math.atan2(ey - y, ex - x)) + rng.uniform(-4, 4)
+                bits = 0
+                for e in enemies:
+                    ex, ey, _ = where[e][j]
+                    off = (
+                        math.degrees(math.atan2(ey - y, ex - x)) - yaw + 180
+                    ) % 360 - 180
+                    if math.dist((x, y), (ex, ey)) < 1400 and abs(off) < 53:
+                        bits |= 1 << e
+                xs.append(round(x))
+                ys.append(round(y))
+                zs.append(0)
+                yaws.append(round((yaw + 180) % 360 - 180))
+                hps.append(100 if tick < died - 96 else 41)
+                blinds.append(1 if i == blind_one and 0 <= tick - blind_at < 96 else 0)
+                sees.append(bits)
+            players.append(
+                {
+                    "i": i,
+                    "side": side[i],
+                    "x": xs,
+                    "y": ys,
+                    "z": zs,
+                    "yaw": yaws,
+                    "hp": hps,
+                    "blind": blinds,
+                    "sees": sees,
+                }
+            )
+        shots, dead = [], []
+        for v, (at, killer, k) in sorted(deaths.items(), key=lambda d: d[1][0]):
+            shots += [[at + round(ms * 64 / 1000), killer] for ms in k["shots_ms"]]
+            x, y, _ = spot(v, at)
+            dead.append([at, v, killer, k["weapon"], k["headshot"], round(x), round(y)])
+        carrier = next(i for i in range(len(people)) if side[i] == "T")
+        bomb = [
+            [
+                span["start_tick"] + 200,
+                "pickup",
+                carrier,
+                *map(round, route[carrier][0]),
+            ]
+        ]
+        plant_at = start + 60 * 64
+        if rng.random() < 0.5 and deaths.get(carrier, (end + 1,))[0] > plant_at:
+            px, py, _ = spot(carrier, plant_at)
+            bomb.append([plant_at, "plant", carrier, round(px), round(py)])
+        smoke_at = [route[i][3] for i in rng.sample(range(len(people)), 2)]
+        rounds.append(
+            {
+                "number": n,
+                "start": start,
+                "end": end,
+                "t0": t0,
+                "players": players,
+                "shots": sorted(shots),
+                "deaths": dead,
+                "smokes": [
+                    [start + 1600 + 400 * s, start + 1600 + 400 * s + 18 * 64, x, y]
+                    for s, (x, y) in enumerate(smoke_at)
+                ],
+                "fires": [[start + 2400, start + 2400 + 7 * 64, *route[carrier][2]]],
+                "bomb": bomb,
+            }
+        )
+    return {
+        "version": 1,
+        "map": report["map_name"],
+        "tick_rate": 64,
+        "sample_ticks": 4,
+        "smoke_radius": 144,
+        "fire_radius": 120,
+        "visibility": True,
+        "players": [{"id": p["player_id"], "name": p["name"]} for p in people],
+        "rounds": rounds,
+    }
+
+
 def main() -> int:
     from overwatch.pipeline.report import MatchReport
 
     paths.REPORTS.mkdir(parents=True, exist_ok=True)
     for clean in (False, True):
-        report = MatchReport.model_validate(build(clean=clean))
+        built = build(clean=clean)
+        built["replay"] = True
+        report = MatchReport.model_validate(built)
         name = f"{REPORT_ID}-clean" if clean else REPORT_ID
         out = paths.REPORTS / f"{name}.json"
         out.write_text(json.dumps(report.model_dump(mode="json"), indent=1))
+        write_replay(replay(built), paths.REPORTS / f"{name}.replay.json.gz")
         print(f"wrote {out}")
         print(f"     http://127.0.0.1:8000/#/report/{name}")
     return 0

@@ -29,3 +29,16 @@ def test_nobody_kills_themselves():
     report = MatchReport.model_validate(fake_report.build())
     for player in report.players:
         assert all(k.victim != player.name for k in player.kill_log)
+
+
+def test_the_replay_lines_up_and_the_dead_kill_nobody():
+    replay = fake_report.replay(fake_report.build())
+    assert replay["version"] == 1 and len(replay["rounds"]) == 18
+    for rnd in replay["rounds"]:
+        lengths = {
+            len(p[f]) for p in rnd["players"] for f in ("x", "yaw", "hp", "sees")
+        }
+        assert len(lengths) == 1, rnd["number"]
+        died = {victim: tick for tick, victim, *_ in rnd["deaths"]}
+        for tick, _victim, killer, *_ in rnd["deaths"]:
+            assert died.get(killer, tick + 1) > tick, rnd["number"]
