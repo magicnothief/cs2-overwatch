@@ -14,6 +14,7 @@ demo is seen exactly as the models were taught to see one.
 from __future__ import annotations
 
 import bisect
+import logging
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -38,6 +39,7 @@ from overwatch.layers.l4_judge.rendering import render_case
 from overwatch.maps import prepare_map
 from overwatch.parsing import ParsedMatch
 from overwatch.parsing.demo import parse_demo
+from overwatch.pipeline.replay import build_replay, write_replay
 from overwatch.pipeline.report import (
     KillReport,
     MatchReport,
@@ -48,6 +50,8 @@ from overwatch.pipeline.report import (
 )
 from overwatch.pipeline.scorer import Scorer
 from overwatch.schemas.evidence import Evidence, Severity
+
+log = logging.getLogger(__name__)
 
 #: A player is flagged when their score beats this share of clean players. In
 #: cross-validation that line catches ~85% of banned players and flags ~1 clean
@@ -97,11 +101,14 @@ def analyze_demo(
     progress: Progress | None = None,
     cs2: str | Path | None = None,
     prepare: bool = True,
+    replay_to: Path | None = None,
 ) -> MatchReport:
     """Parse a .dem file and run every layer on it.
 
     The first demo on a map also makes that map's mesh and radar, from the CS2
-    install (`cs2`, or found through Steam); `prepare=False` skips that.
+    install (`cs2`, or found through Steam); `prepare=False` skips that. With
+    `replay_to`, the round replay is written there too (pipeline/replay.py); a
+    replay that fails costs the report its replay, never the report.
     """
     path = Path(path)
     tell = progress or _quiet
@@ -127,6 +134,14 @@ def analyze_demo(
     report.timings = {"parse": round(parsed, 2), **report.timings}
     if ready is not None and ready.note:
         report.notes.insert(0, ready.note)
+    if replay_to is not None:
+        started = time.perf_counter()
+        try:
+            write_replay(build_replay(match, map_name=map_name), replay_to)
+            report.replay = True
+            report.timings["replay"] = round(time.perf_counter() - started, 2)
+        except Exception:
+            log.exception("the round replay for %s could not be built", path.name)
     return report
 
 

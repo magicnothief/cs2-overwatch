@@ -5,6 +5,8 @@ the web layer — what it accepts, where it stores things, what it refuses to
 serve — not the detector.
 """
 
+import gzip
+import json
 import time
 from pathlib import Path
 
@@ -18,18 +20,22 @@ from overwatch.pipeline.report import MatchReport, PlayerReport
 
 #: What a browser is told to open, so Host and Origin are what a real one sends.
 LOCAL = "http://127.0.0.1:8000"
+REPLAY = {"version": 1, "rounds": []}
 
 
 def _fake_report(path, **kwargs) -> MatchReport:
     progress = kwargs.get("progress")
     for stage in ("layer 1", "layer 2", "layer 3"):
         progress(stage, stage)
+    if replay_to := kwargs.get("replay_to"):
+        replay_to.write_bytes(gzip.compress(json.dumps(REPLAY).encode()))
     return MatchReport(
         demo=Path(path).name,
         map_name="de_dust2",
         visibility="ray cast against the de_dust2 mesh",
         kills=1,
         players=[PlayerReport(player_id="1", judge_alias="Player_0", kills=1)],
+        replay=replay_to is not None,
     )
 
 
@@ -91,6 +97,23 @@ def test_something_that_is_not_a_demo_is_refused(client: TestClient) -> None:
 def test_a_report_id_cannot_walk_the_filesystem(client: TestClient) -> None:
     assert client.get("/api/reports/..%2F..%2Fetc%2Fpasswd").status_code == 404
     assert client.get("/api/reports/nope").status_code == 404
+
+
+def test_a_report_brings_its_replay_gzipped(client: TestClient) -> None:
+    started = client.post("/api/analyses?name=m.dem&judge=none", content=DEMO_MAGIC)
+    job = _wait(client, started.json()["id"])
+    assert client.get(f"/api/reports/{job['report_id']}").json()["replay"] is True
+    # the replay file is not a report of its own
+    assert [r["id"] for r in client.get("/api/reports").json()] == [job["report_id"]]
+    served = client.get(f"/api/reports/{job['report_id']}/replay")
+    assert served.status_code == 200
+    assert served.headers["content-encoding"] == "gzip"
+    assert served.json() == REPLAY  # the client unpacks it, as a browser does
+
+
+def test_a_replay_id_cannot_walk_the_filesystem(client: TestClient) -> None:
+    assert client.get("/api/reports/..%2Fsecret/replay").status_code == 404
+    assert client.get("/api/reports/nope/replay").status_code == 404
 
 
 def test_without_a_scorer_it_says_what_to_run(tmp_path: Path) -> None:

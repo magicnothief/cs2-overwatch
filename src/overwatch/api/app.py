@@ -6,6 +6,7 @@
     GET  /api/analyses/{id}         a job's progress
     GET  /api/reports               every saved report, newest first
     GET  /api/reports/{id}          one report (pipeline.MatchReport as JSON)
+    GET  /api/reports/{id}/replay   its round replay (pipeline/replay.py), gzipped
     GET  /api/radars/{map}          where a map's radar sits in world coordinates
     GET  /radars/{map}.png          the radar itself (training/rules/render_radars.py)
 
@@ -361,6 +362,16 @@ def create_app(
         if not _REPORT_ID.match(report_id) or not path.exists():
             raise HTTPException(404, "No such report")
         return FileResponse(path, media_type="application/json")
+
+    @app.get("/api/reports/{report_id}/replay")
+    def report_replay(report_id: str) -> FileResponse:
+        # stored gzipped; served as is for the browser to unpack
+        path = runner.reports / f"{report_id}.replay.json.gz"
+        if not _REPORT_ID.match(report_id) or not path.exists():
+            raise HTTPException(404, "This review has no round replay")
+        return FileResponse(
+            path, media_type="application/json", headers={"Content-Encoding": "gzip"}
+        )
 
     return app
 

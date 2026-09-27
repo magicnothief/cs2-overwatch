@@ -53,6 +53,8 @@ def main(argv: list[str] | None = None) -> None:
         else:
             print(f"no judge model at {args.judge_model}; running layers 1-3 only")
 
+    out = args.out or paths.REPORTS / f"{args.demo.stem}.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
     report = analyze_demo(
         args.demo,
         scorer=Scorer(args.scorer),
@@ -60,11 +62,10 @@ def main(argv: list[str] | None = None) -> None:
         judge_policy=args.judge,
         cs2=chosen.cs2,
         progress=lambda _stage, m: print(f"  {m}", flush=True),
+        replay_to=out.with_name(f"{out.stem}.replay.json.gz"),
     )
     print(render_text(report))
 
-    out = args.out or paths.REPORTS / f"{args.demo.stem}.json"
-    out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(report.model_dump_json(indent=2))
     print(f"\nfull report: {out}")
 

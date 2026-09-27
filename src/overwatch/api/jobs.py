@@ -139,6 +139,8 @@ class Runner:
             scorer, judge = self._models(
                 job.judge_policy != "none", lambda m: progress("parse", m)
             )
+            report_id = demo.stem
+            self.reports.mkdir(parents=True, exist_ok=True)
             report = analyze_demo(
                 demo,
                 scorer=scorer,
@@ -146,10 +148,9 @@ class Runner:
                 judge_policy=job.judge_policy,
                 progress=progress,
                 cs2=self.settings().cs2,
+                replay_to=self.reports / f"{report_id}.replay.json.gz",
             )
             report.demo = job.demo
-            report_id = demo.stem
-            self.reports.mkdir(parents=True, exist_ok=True)
             (self.reports / f"{report_id}.json").write_text(report.model_dump_json())
             job.report_id = report_id
             job.state, job.message = "done", "Finished"

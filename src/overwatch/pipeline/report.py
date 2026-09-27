@@ -136,6 +136,10 @@ class MatchReport(BaseModel):
     judge_engine: str | None = Field(
         default=None, description="where the judge ran, e.g. 'GPU: ... via vulkan'"
     )
+    replay: bool = Field(
+        default=False,
+        description="a round replay (<report>.replay.json.gz) sits beside this report",
+    )
 
 
 def _percentile_text(p: PlayerReport) -> str:

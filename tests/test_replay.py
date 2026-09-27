@@ -201,3 +201,32 @@ def test_a_real_demo_stays_within_budget(tmp_path: Path) -> None:
     for rnd in built["rounds"]:
         lengths = {len(p[f]) for p in rnd["players"] for f in ("x", "hp")}
         assert len(lengths) == 1
+
+
+def test_analysis_writes_the_replay_and_survives_one_that_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from overwatch.pipeline import analyze
+    from overwatch.pipeline.report import MatchReport
+
+    match = ParsedMatch(ticks=_ticks(), events=_events(), meta={"map": "de_test"})
+    stub = MatchReport(demo="x", visibility="none", kills=0, players=[])
+    monkeypatch.setattr(analyze, "parse_demo", lambda path: match)
+    monkeypatch.setattr(analyze, "analyze_match", lambda *a, **k: stub.model_copy())
+    monkeypatch.setattr(analyze, "build_replay", lambda m, map_name: {"version": 1})
+    out = tmp_path / "x.replay.json.gz"
+    report = analyze.analyze_demo(
+        tmp_path / "x.dem", scorer=None, prepare=False, replay_to=out
+    )
+    assert report.replay is True and "replay" in report.timings
+    assert json.loads(gzip.decompress(out.read_bytes())) == {"version": 1}
+
+    def broken(*args, **kwargs):
+        raise ValueError("a bug in the replay")
+
+    monkeypatch.setattr(analyze, "build_replay", broken)
+    lost = tmp_path / "y.replay.json.gz"
+    report = analyze.analyze_demo(
+        tmp_path / "y.dem", scorer=None, prepare=False, replay_to=lost
+    )
+    assert report.replay is False and not lost.exists()
