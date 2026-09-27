@@ -139,9 +139,9 @@ FEATURE_LABELS: dict[str, tuple[str, str]] = {
         "lower",
     ),
     "snap_max": ("fastest turn on a kill tick (deg/s)", "higher"),
-    "snap_kills": ("kills with a turn over 200 deg/s on the kill tick", "higher"),
+    "snap_kills": ("kills with a turn over 175 deg/s on the kill tick", "higher"),
     "arrival_shot_share": (
-        "kills fired on the very tick the crosshair reached the head",
+        "kills fired on the very tick the crosshair swept onto the head",
         "higher",
     ),
     "zero_motion_share": ("ticks with the crosshair perfectly still", "higher"),
@@ -164,10 +164,17 @@ FEATURE_LABELS: dict[str, tuple[str, str]] = {
 #: FEATURE_LABELS is therefore not enough to show it to the pinned judge: it needs an
 #: entry here too, and models.JUDGE_GENERATION at or above that entry. Showing these
 #: two again is exactly that — the same commit that moves the pin to the redesigned
-#: judge (MAG-11), and nothing else.
+#: judge (the arrival redesign), and nothing else.
+#:
+#: Both say 6, not 5, because the arrival redesign changed what they measure: an arrival now
+#: requires the crosshair's own sweep (shots.ARRIVAL_SWEEP_DPS) and `snap_kills`
+#: counts turns over 175 deg/s, not 200. v5's training data holds the old
+#: definitions on both, so the same number means a different thing to it. v5 is
+#: not shipped (it failed gates 2 and 3, docs/evals/2026-09-26-judge-v5-ship-gates.md),
+#: and the redesigned pair reaches a prompt only at generation 6.
 FEATURE_SINCE_JUDGE: dict[str, int] = {
-    "snap_kills": 5,
-    "arrival_shot_share": 5,
+    "snap_kills": 6,
+    "arrival_shot_share": 6,
 }
 
 #: The mirror of the table above: measurements a later fine-tune stopped being
@@ -184,8 +191,8 @@ FEATURE_SINCE_JUDGE: dict[str, int] = {
 #: read 10 measurements; on the label table without this entry it reads 9, and that one
 #: missing line costs 6.3107 points of target match on the 206 held-out cases: 92.2330%
 #: (190/206) on the text v4 was trained on against 85.9223% (177/206) without it, same
-#: GGUF, same runtime, same rows (docs/evals/2026-09-26-judge-v4-on-master-text.md,
-#: MAG-13). The high-kill band loses most, -19.6 points past 20 kills, which is where
+#: GGUF, same runtime, same rows (docs/evals/2026-09-26-judge-v4-on-master-text.md).
+#: The high-kill band loses most, -19.6 points past 20 kills, which is where
 #: one extreme turn is likeliest.
 #:
 #: Rule 1 of this module holds on both sides: the pinned reference still carries the
@@ -199,7 +206,7 @@ FEATURE_UNTIL_JUDGE: dict[str, int] = {
 #: The newest judge this format knows how to feed. Training, annotation and the
 #: baseline run render for this one, not for the pinned judge: a fine-tune has to be
 #: trained on every measurement before a pin can ever show it one.
-LATEST_JUDGE = 5
+LATEST_JUDGE = 6
 
 
 def features_for(judge: int) -> dict[str, tuple[str, str]]:

@@ -62,6 +62,20 @@ from overwatch.layers.l4_judge.verdict import CheatType, Verdict, VerdictLabel
 #: gave 62% of clean players an "unclear" target.
 NOTABLE_QUANTILE = 0.95
 STRONG_QUANTILE = 0.99
+#: Lines a measurement may not sit below, whatever the quantile says: (notable,
+#: strong), in the measurement's own units, and only ever raised, never lowered.
+#:
+#: A quantile line over a rare *count* lands on a tiny integer by construction —
+#: the 99th percentile of clean `snap_kills` is 2, so three such kills reached
+#: DECISIVE on their own. Lowering the speed threshold does not help; raising it
+#: makes the count rarer and the line smaller. Measured over 144 candidate
+#: definitions in docs/evals/2026-09-26-arrival-redesign.md, no (speed, statistic)
+#: pair puts the quantile line where three kills cannot decide a verdict. So the
+#: quantile is treated as a ceiling on false positives rather than a target: a
+#: count must reach 3 to be notable and 4 to be strong, which is strictly more
+#: conservative than the quantile and flags 0.90% of clean CS2CD players instead
+#: of 1.61%.
+LINE_FLOORS: dict[str, tuple[float, float]] = {"snap_kills": (2.0, 3.0)}
 #: What each level adds towards a verdict. One strong measurement, or three notable
 #: ones agreeing, reach DECISIVE — true of 32% of banned players and 3% of clean
 #: ones on the measurements alone.
@@ -130,7 +144,7 @@ CHECKS: list[tuple[str, bool, str, str]] = [
         True,
         "aimbot",
         (
-            "{value} of their kills came with a turn over 200 deg/s on the kill "
+            "{value} of their kills came with a turn over 175 deg/s on the kill "
             "tick, against {base} for clean players"
         ),
     ),
@@ -140,7 +154,7 @@ CHECKS: list[tuple[str, bool, str, str]] = [
         "triggerbot",
         (
             "{value} of their kills were fired on the very tick the crosshair "
-            "reached the head, against {base} for clean players"
+            "swept onto the head, against {base} for clean players"
         ),
     ),
 ]
@@ -174,6 +188,10 @@ def cited(value: float, *, percent: bool = False) -> str:
 def clean_lines(players: pl.DataFrame) -> Lines:
     """Where 95% and 99% of clean players stop, for every measurement the judge sees
     that has a suspicious direction. The case carries these and the text shows them.
+
+    A measurement in LINE_FLOORS has its lines raised to the floor when the clean
+    quantile falls below it, so the floor can only ever cost recall, never add a
+    false positive.
     """
     clean = players.filter(pl.col("label") == "clean")
     lines: Lines = {}
@@ -185,9 +203,13 @@ def clean_lines(players: pl.DataFrame) -> Lines:
             if direction == "higher"
             else (1 - NOTABLE_QUANTILE, 1 - STRONG_QUANTILE)
         )
+        # a floor is "further from clean", which for a lower-is-worse measurement
+        # would mean a minimum; none is defined and the direction is asserted
+        assert key not in LINE_FLOORS or direction == "higher", key
+        floor = LINE_FLOORS.get(key, (float("-inf"), float("-inf")))
         lines[key] = (
-            float(clean[key].quantile(notable)),
-            float(clean[key].quantile(strong)),
+            max(float(clean[key].quantile(notable)), floor[0]),
+            max(float(clean[key].quantile(strong)), floor[1]),
         )
     return lines
 

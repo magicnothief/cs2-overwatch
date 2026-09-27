@@ -260,3 +260,43 @@ def test_a_value_shown_equal_to_a_line_is_not_past_it() -> None:
     """0.4801 reads as 0.48 in the text; the target must agree with the text."""
     at_line = build_target(_case(straight_share=0.4801), random.Random(0))
     assert at_line.verdict is VerdictLabel.CLEAN
+
+
+def test_a_rare_count_gets_a_kill_floor_not_just_a_quantile() -> None:
+    """Three `snap_kills` used to be decisive on their own (the arrival redesign).
+
+    The 99th percentile of a count that most clean players never reach at all is a
+    tiny integer — 2 on CS2CD — so `level()` called 3 kills strong and one strong
+    measurement reaches DECISIVE. targets.LINE_FLOORS raises the line and never
+    lowers it: a floored measurement flags fewer clean players than the quantile
+    would, never more.
+    """
+    import polars as pl
+
+    from overwatch.layers.l4_judge.targets import LINE_FLOORS, clean_lines
+
+    def players(snap: list[int], straight: list[float]) -> pl.DataFrame:
+        return pl.DataFrame(
+            {
+                "label": "clean",
+                "snap_kills": snap,
+                "straight_share": straight,
+            }
+        )
+
+    # 100 clean players, 2 of whom have a single snap kill: the quantile lines are 0
+    frame = players([0] * 98 + [1, 1], [0.1] * 98 + [0.9, 0.9])
+    lines = clean_lines(frame)
+    assert lines["snap_kills"] == LINE_FLOORS["snap_kills"] == (2.0, 3.0)
+    # a measurement with no floor is the quantile, untouched
+    assert lines["straight_share"] == (
+        float(frame["straight_share"].quantile(0.95)),
+        float(frame["straight_share"].quantile(0.99)),
+    )
+
+    # and where clean players are past the floor, the quantile wins: it is a floor
+    loud = players(list(range(100)), [0.1] * 100)
+    assert clean_lines(loud)["snap_kills"] == (
+        float(loud["snap_kills"].quantile(0.95)),
+        float(loud["snap_kills"].quantile(0.99)),
+    )

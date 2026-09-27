@@ -50,8 +50,31 @@ SWEEP_DPS = (None, 10, 15, 20, 25, 30, 40, 50)
 SWEEP_MIN = (5, 6, 7, 8, 10, 12)
 
 
-def load(path: str) -> pl.DataFrame:
-    files = sorted(glob.glob(f"{path}/*.parquet")) if Path(path).is_dir() else [path]
+def lab_files(paths: str | list[str], exclude: list[str] | None = None) -> list[str]:
+    """The parquets of one or more lab outputs, minus the demos of other samples.
+
+    A `--per-map 25` sample is not disjoint from a `--per-map 5` sample of another
+    seed — both draw from the same 1,988-demo listing — so a confirmation read has
+    to subtract the selection sample's demos by name rather than trust a fresh seed.
+    """
+    dropped = {
+        Path(remote).stem
+        for path in exclude or []
+        for remote in json.loads(Path(path, "listing.json").read_text())["demos"]
+    }
+    return [
+        f
+        for path in ([paths] if isinstance(paths, str) else paths)
+        for f in (
+            sorted(glob.glob(f"{path}/*.parquet")) if Path(path).is_dir() else [path]
+        )
+        if Path(f).stem not in dropped
+    ]
+
+
+def load(paths: str | list[str], exclude: list[str] | None = None) -> pl.DataFrame:
+    """One or more lab parquets or lab output directories, concatenated."""
+    files = lab_files(paths, exclude)
     lab = pl.concat([pl.read_parquet(f) for f in files], how="vertical_relaxed")
     return lab.with_columns(dps=pl.col("cross_step") * TICK_RATE)
 
@@ -156,11 +179,19 @@ def evaluate(cs2cd: pl.DataFrame, pro: pl.DataFrame) -> list[dict]:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--cs2cd", default="data/processed/arrival_lab.parquet")
-    ap.add_argument("--pro", default="data/processed/pro_arrival_lab")
+    ap.add_argument("--pro", nargs="+", default=["data/processed/pro_arrival_lab"])
+    ap.add_argument(
+        "--pro-exclude",
+        nargs="*",
+        default=[],
+        help="pro samples whose demos to drop, for a strictly disjoint read",
+    )
     ap.add_argument("--json", type=Path)
     args = ap.parse_args()
 
-    rows = evaluate(load(args.cs2cd), load(args.pro))
+    pro_files = lab_files(args.pro, args.pro_exclude)
+    print(f"pro sample: {len(pro_files)} demos")
+    rows = evaluate(load(args.cs2cd), load(pro_files))
     head = [
         "dps",
         "min_arrival",

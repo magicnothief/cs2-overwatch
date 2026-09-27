@@ -47,6 +47,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
-      - name: pip-audit against the locked tree (non-blocking until 2026-10-03, see MAG-9)
+      - name: pip-audit against the locked tree (non-blocking until 2026-10-03, see docs/decisions/0009)
         continue-on-error: true
         run: uvx pip-audit --strict -r <(uv export --no-default-groups --format requirements-txt)

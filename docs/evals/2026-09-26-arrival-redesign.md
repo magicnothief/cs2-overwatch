@@ -202,11 +202,70 @@ candidates would be reading noise.
 line has moved up into a thin part of the distribution, not because pros have
 become cleaner than clean players. That is a fragile place to draw a line.
 
-**Therefore: enlarge the pro sample, then decide.** `pro_arrival_lab.py
---per-map 25 --seed 2` (175 matches, ~1,700 players, disjoint seed) is running;
-`--per-map 5 --seed 1` is running as a quick independent read. Both resume — a
-rerun skips demos already dumped. Selection stays on seed 0; the verdict will be
-read off the fresh samples.
+### 5a. The fresh sample killed it, as expected
+
+`pro_arrival_lab.py --per-map 5 --seed 1`, 35 matches, **346 players, zero demo
+overlap with seed 0** (checked against both `listing.json` files).
+
+| candidate | seed 0 (341 pros) | seed 1 (346 pros) | pooled, 70 matches (687 pros) |
+|---|---|---|---|
+| v5, any arrival, MIN 5 | 22 of 278 (7.9137%) | 20 of 277 (7.2202%) | 42 of 555 (7.5676%) |
+| >= 15 deg/s, MIN 6 | 3 of 144 (2.0833%) | 3 of 158 (1.8987%) | 6 of 302 (1.9868%) |
+| **>= 20 deg/s, MIN 6** | **1 of 117 (0.8547%)** | **3 of 129 (2.3256%)** | **4 of 246 (1.6260%)** |
+| >= 25 deg/s, MIN 6 | 2 of 91 (2.1978%) | 4 of 100 (4.0000%) | 6 of 191 (3.1414%) |
+| >= 30 deg/s, MIN 5 | 3 of 113 (2.6549%) | 3 of 123 (2.4390%) | 6 of 236 (2.5424%) |
+
+The v5 baseline reproduces on the fresh sample to within 0.7 points, so the pro
+population is stable and the seed-0 reading was not a strange sample. The
+**seed-0 winner was selection noise**: 0.8547% became 2.3256%, and **all 8
+S1-S4 candidates fail gate 3 on seed 1**. Picking the best of 44 against one
+35-match sample bought a number that did not survive one disjoint sample. That is
+the whole reason the confirmation run exists.
+
+Pooled over 70 matches, the redesign still cuts the pro rate 4.65x — 7.5676% of
+shown to 1.6260% — and still misses gate 3's 1% ceiling on the shown denominator.
+
+### 5b. What does pass, and why S4 was the wrong criterion
+
+On the pooled 687 pros, 15 candidates put **zero** pros past their 95% line on
+both denominators. Every one of them fails **S4** — my own coverage floor of 15%
+of CS2CD clean players — and nothing else. S4 was pre-registered and it was
+wrong: it assumed low coverage means hiding, when for this measurement it means
+the behaviour is genuinely rare. Gate 3's two denominators already catch hiding,
+because withholding raises the of-shown rate.
+
+Stating the change plainly: **S4 was relaxed after the pro numbers were seen.**
+That makes what follows a hypothesis, not a verdict.
+
+| candidate | line95 | line99 | shown (CS2CD clean) | clean past | cheater past | lift | pros past, pooled |
+|---|---|---|---|---|---|---|---|
+| >= 20 deg/s, MIN 8 | 0.3500 | 0.6127 | 8.55% | 5.14% | 41.67% | 8.10x | 1 of 118 (0.8475%) |
+| **>= 50 deg/s, MIN 5** | **0.4857** | **0.8327** | **7.45%** | **5.25%** | **47.90%** | **9.13x** | **0 of 102 (0%)** |
+| >= 50 deg/s, MIN 6 | 0.5000 | 0.8429 | 3.93% | 4.35% | 52.14% | 11.99x | 0 of 55 (0%) |
+| >= 40 deg/s, MIN 7 | 0.4286 | 0.7705 | 3.91% | 4.37% | 53.10% | 12.14x | 0 of 49 (0%) |
+
+`>= 50 deg/s, MIN 5` is the one to take forward: it keeps the most coverage of
+the zero-hit set, and its line clears `2/5 = 0.4` by 0.0857 — no floating-point
+tie, three arrival-tick kills needed at every eligible count.
+
+**What it costs, over the whole population rather than the eligible subset:**
+
+| | flags this share of all 4,093 clean CS2CD players | flags this share of all 1,059 cheaters | ratio |
+|---|---|---|---|
+| v5, any arrival, MIN 5 | 2.5165% | 11.3314% | 4.50x |
+| >= 20 deg/s, MIN 6 | 0.6352% | 8.3097% | 13.08x |
+| **>= 50 deg/s, MIN 5** | **0.3909%** | **7.5543%** | **19.32x** |
+
+It reaches a third fewer cheaters than v5 (7.5543% against 11.3314%) and flags
+6.4x fewer clean players (0.3909% against 2.5165%). Given the product's output is
+an accusation, that is the trade to take, and it is the trade being made
+deliberately rather than by accident.
+
+**Still not certifiable.** 0 of 102 shown pros bounds the rate at **3.5519%**
+with 95% confidence, not 1%. `--per-map 25 --seed 2` (175 matches, disjoint
+again) is running and will bring the shown count to roughly 500; 0 of 500 bounds
+it at **0.7351%** and settles gate 3. That run resumes — a rerun skips demos already
+dumped.
 
 ## 6. Gate 2 clause 1 cannot be met by redesigning `arrival_shot_share`
 
@@ -242,53 +301,183 @@ have not implemented that; it changes every training target and needs its own
 measurement of what it costs on CS2CD recall. **Flagged to CTO as a release-plan
 change.**
 
-## 7. `snap_kills` is sniper-confounded (ADR 0008)
+## 7. `snap_kills`: the line, not the count, is what two kills decide
 
-Pros past its lines: **9 of 341 (2.6393%)** past 1.0, **2 of 341 (0.5865%)** past
-2.0. Against CS2CD clean at 1.61% and 0.86%. Past the strong line pros are
-*below* CS2CD clean players, so the accusation is not a rate problem — it is
-section 6's rule.
+Pros past its shipped lines, on the pooled 687: **13 of 687 (1.8923%)** past 1.0,
+**3 of 687 (0.4367%)** past 2.0. Against CS2CD clean at 1.61% and 0.86%. Gate 3
+asks for 1% past the 95% line, so `snap_kills` fails it too, 1.9x over.
 
-The line itself is confounded, though. Splitting CS2CD by sniper share:
+The count itself is not the problem. **A 95%/99% quantile over a rare count lands
+on a tiny integer by construction**, and that is what makes two kills decide:
+clean CS2CD players' `snap_kills` is 0 for 96% of them, so the 95th percentile is
+1 and the 99th is 2. Three kills are then "strong", and one strong measurement is
+`DECISIVE` (section 6).
 
-| subgroup | n clean / cheater | clean past 1.0 | cheater past 1.0 | lift | clean past 2.0 | cheater past 2.0 |
+Raising the speed threshold makes this worse, not better, because the count gets
+rarer and the line gets smaller:
+
+| threshold | clean q95 / q99 | notable at | strong at | CS2CD clean past 95 | cheater past 95 | pros past 95, of 687 |
 |---|---|---|---|---|---|---|
-| sniper share < 20% | 2,969 / 207 | 0.71% | 3.38% | 4.76x | 0.27% | 1.93% |
-| 20-50% | 763 / 166 | 1.44% | 12.05% | 8.37x | 0.26% | 7.83% |
-| **>= 50%, AWP main** | **361 / 686** | **9.42%** | **16.33%** | **1.73x** | **6.93%** | **11.22%** |
-| all | 4,093 / 1,059 | 1.61% | 13.13% | 8.14x | 0.86% | 8.88% |
+| 100 deg/s | 2 / 4 | 3 kills | 5 kills | 2.20% | 15.68% | 19 (2.7657%) |
+| 150 deg/s | 1 / 3 | 2 kills | 4 kills | 2.76% | 16.90% | 24 (3.4934%) |
+| 175 deg/s | 1 / 2 | 2 kills | 3 kills | 2.08% | 15.11% | 18 (2.6201%) |
+| 200 deg/s (shipped) | 1 / 2 | 2 kills | 3 kills | 1.61% | 13.13% | 13 (1.8923%) |
+| 300 deg/s | 0 / 1 | 1 kill | 2 kills | 4.35% | 18.32% | 37 (5.3857%) |
+| 500 deg/s | 0 / 1 | 1 kill | 2 kills | 1.61% | 10.86% | 14 (2.0378%) |
 
-For an AWP main, 3 kills over 200 deg/s is a 6.93%-of-clean event, not the
-0.86% the aggregate 99% line claims — the line overstates it by 8x. Target rule 3
-discounts sniping for the *visibility* measurements only; `snap_kills` goes
-straight to `DECISIVE`. The accused pro (C) is not a sniper (no sniper kills; rifles, an SMG and a pistol), so this did not cause that
-accusation — but it will cause the next one, and it belongs in the same redesign.
+**144 candidates were swept** — 9 speeds x (count, share over kills with a 10- or
+14-kill floor) x (all weapons, non-sniper kills only) x (one pooled line, a line
+per sniper band) — and **none puts the quantile line where three kills cannot
+decide a verdict**. Rewriting the count as a share does not help either: it turns
+1 kill of 14 into a value past the line.
+
+### 7a. The fix: the quantile is a ceiling on false positives, not a target
+
+`targets.LINE_FLOORS` raises a measurement's lines when the clean quantile falls
+below a floor, and never lowers them. For `snap_kills` the floor is `(2.0, 3.0)`:
+**3 kills to be notable, 4 to be strong**. This is strictly more conservative than
+the spec's quantile rule — it can only ever cost recall, never add a false
+positive — and it is the one deviation from
+`docs/specs/2026-09-26-triggerbot-and-snap-count.md` section 1 ("95% line
+notable, 99% strong") that this redesign needs. **It needs CTO's approval as a
+spec change.**
+
+With the floor in place, 175 deg/s is the best of the 9 speeds:
+
+| | notable / strong | CS2CD clean past notable | cheater past notable | lift | cheater past strong | pros past notable, of 687 | past strong |
+|---|---|---|---|---|---|---|---|
+| shipped, 200 deg/s, quantile | 2 / 3 kills | 1.61% | 13.13% | 8.14x | 8.88% | 13 (1.8923%) | 3 (0.4367%) |
+| 150 deg/s + floor | 3 / 4 kills | 1.08% | 11.43% | 10.63x | 8.97% | 3 (0.4367%) | 1 (0.1456%) |
+| **175 deg/s + floor** | **3 / 4 kills** | **0.90%** | **10.39%** | **11.49x** | **7.93%** | **3 (0.4367%)** | **1 (0.1456%)** |
+| 300 deg/s + floor | 3 / 4 kills | 0.51% | 5.76% | 11.23x | 3.97% | 2 (0.2911%) | 1 (0.1456%) |
+
+175 over 150 on the false-positive asymmetry: same pro rate, same crossing
+counts, 0.90% of clean players against 1.08%, and a higher lift. 175 over 300
+because 300 drops cheater recall by 45% (5.76% against 10.39%) to buy one pro.
+
+Against the pre-registered criteria in `training/arrival/gate3_snap.py`, applied
+to CS2CD before the pro columns were read:
+
+| criterion | threshold | 175 deg/s + floor | verdict |
+|---|---|---|---|
+| N1 no 2-kill verdicts | notable needs >= 3 kills, strong >= 4 | 3 and 4 | **pass** |
+| N2 signal kept | cheaters past notable >= 10.00% | 10.39% | **pass** |
+| N3 separation improved | lift >= the shipped 8.14x | 11.49x | **pass** |
+| N4 sniper robustness | AWP-main lift >= 3.00x | 1.77x | **fail** |
+| gate 3 | <= 1% of pros past the 95% line | 0.4367% (3 of 687) | **pass** |
+
+### 7b. N4 fails, and no definition of the measurement fixes it
+
+The sniper confound stands. Splitting CS2CD by sniper share, at 175 deg/s with the
+floor:
+
+| subgroup | n clean / cheater | line | clean past notable | cheater past notable | lift |
+|---|---|---|---|---|---|
+| sniper share < 20% | 2,969 / 207 | 3 kills | 0.27% | 2.42% | 8.96x |
+| 20-50% | 763 / 166 | 3 kills | 0.26% | 8.43% | 32.17x |
+| **>= 50%, AWP main** | **361 / 686** | **3 kills** | **7.48%** | **13.27%** | **1.77x** |
+| all | 4,093 / 1,059 | 3 kills | 0.90% | 10.39% | 11.49x |
+
+A clean AWP main is **28x** more likely to be flagged by this measurement than a
+clean rifler (7.48% against 0.27%). The aggregate lift of 11.49x is carried
+entirely by riflers, exactly as it was at 200 deg/s. **Max AWP-main lift over all
+144 candidates is 1.91x**, so N4 is not reachable by redefining the measurement.
+
+Two ways out were measured; neither is landed:
+
+- **A line per sniper band** (an AWP main compared against clean AWP mains, line
+  4 kills): clean AWP mains past notable falls 7.48% to 4.99% — the 5% a 95% line
+  means by construction — but cheaters past notable falls 10.39% to 6.42%, a 38%
+  recall loss to remove 2.5 points of AWP false positives. Rejected on that trade.
+- **Extend target rule 3 to `snap_kills`** (ADR 0008): for a heavy sniper the
+  visibility measurements already do not count towards a verdict; `snap_kills`
+  should join them, since for that subgroup it measures the weapon. This is the
+  recommendation, it is **not implemented**, and it belongs with section 6's
+  corroboration change because both rewrite `targets.evidence_points` and every
+  training target. **Both are one decision for CTO.**
+
+The accused pro (C) is not a sniper (no sniper kills; rifles, an SMG and a pistol), so the confound did not cause that accusation. The
+floor does remove it: pro C has 3 kills over 200 deg/s, which was strong under
+the shipped lines and is notable under the redesigned ones — 0.4 weight, not 1.0,
+so no longer decisive on its own.
+
+## 8. What landed in the code
+
+The measurement changes are landed; the rule changes (section 6, section 7b) are
+not, and are CTO's decision.
+
+| file | change |
+|---|---|
+| `src/overwatch/layers/l3_behavior/shots.py` | `ARRIVAL_SWEEP_DPS = 50.0`; an arrival needs the crosshair's own step over that tick to be 50 deg/s or more |
+| `src/overwatch/layers/l3_behavior/player_features.py` | `SNAP_THRESHOLD_DPS` 200.0 to 175.0 |
+| `src/overwatch/layers/l4_judge/targets.py` | `LINE_FLOORS = {"snap_kills": (2.0, 3.0)}`, applied in `clean_lines`; the two judge-text sentences follow the new labels |
+| `src/overwatch/layers/l4_judge/rendering.py` | both labels reworded ("swept onto the head", "175 deg/s"); `FEATURE_SINCE_JUDGE` 5 to 6 for both; `LATEST_JUDGE` 5 to 6 |
+| `tests/test_shots.py` | the enemy walking into a held crosshair is not an arrival; a crept arrival below the threshold is not one either |
+| `tests/test_judge_targets.py` | a floored line is the floor when the quantile is below it, the quantile when above |
+
+`MIN_ARRIVAL_KILLS` stays 5 — the chosen arrival definition needs no change there.
+
+**Which judge sees what.** `FEATURE_SINCE_JUDGE` now says 6 for both, not 5,
+because the redesign changed what they measure: v5's training data holds the old
+definitions, so the same number means a different thing to it. The pinned judge is
+v4 (`models.JUDGE_GENERATION = 4`) and is shown neither. Training, annotation and
+the baseline render at `LATEST_JUDGE = 6`.
+
+**The shipped code reproduces the lab exactly.** Rebuilding
+`shots.arrival_features` over all 14,671,608 CS2CD tick rows and aggregating per
+player through the feature path gives the same numbers as
+`training/arrival/gate3_arrival.py`'s `>= 50 deg/s, MIN 5` row: line95 0.4857,
+line99 0.8327, shown to 305 of 4,093 clean players (7.4517%), clean past 5.2459%,
+cheater past 47.9042%, lift 9.13x, and over the whole population 0.3909% of clean
+players flagged against 7.5543% of cheaters. `snap_kills` through
+`targets.clean_lines`: clean q95 1.0 and q99 2.0, floored to notable 2.0 and
+strong 3.0, so 2 kills are nothing, 3 notable, 4 strong; clean past notable
+0.9040%, cheaters 10.3872%.
+
+230 tests pass (`.venv/bin/python -m pytest tests/ -q`).
 
 ## Reproducibility
 
 Everything above reruns from the three commands at the top plus:
 
 ```
-# section 1, 2, 3 — statistics over (arrival shots, arrival kills)
-.venv/bin/python training/arrival/gate3_arrival.py \
+# sections 1-5 — statistics over (arrival shots, arrival kills), pooled samples
+PYTHONPATH=src .venv/bin/python training/arrival/gate3_arrival.py \
     --cs2cd data/processed/arrival_lab.parquet \
-    --pro data/processed/pro_arrival_lab --json /tmp/gate3.json
+    --pro data/processed/pro_arrival_lab data/processed/pro_arrival_lab_seed1 \
+    --json /tmp/gate3.json
+
+# section 7 — 144 snap_kills candidates, the same two denominators
+PYTHONPATH=src .venv/bin/python training/arrival/gate3_snap.py \
+    --pro data/processed/pro_arrival_lab data/processed/pro_arrival_lab_seed1 \
+    --json /tmp/snap.json
+
+# section 9 — the confirmation read, strictly disjoint from the selection samples
+PYTHONPATH=src .venv/bin/python training/arrival/pro_arrival_lab.py \
+    --per-map 25 --seed 2 --out data/processed/pro_arrival_lab_big
+PYTHONPATH=src .venv/bin/python training/arrival/gate3_arrival.py \
+    --cs2cd data/processed/arrival_lab.parquet \
+    --pro data/processed/pro_arrival_lab_big \
+    --pro-exclude data/processed/pro_arrival_lab data/processed/pro_arrival_lab_seed1
 
 # section 6 — strong and notable measurements in the v5 pro run's evidence text
 uv run python training/check_pro_demos.py --summary --out data/processed/pro_check_v5
 ```
 
-Seeds: pro sample `--seed 0` (selection), `--seed 1` and `--seed 2`
-(confirmation, running). Bootstrap in section 5 is
-`numpy.random.default_rng(0)`, 2,000 resamples.
+Seeds: pro sample `--seed 0` and `--seed 1` (selection), `--seed 2` (confirmation).
+Bootstrap in section 5 is `numpy.random.default_rng(0)`, 2,000 resamples. Both
+gate tools take `--pro-exclude`, because `--per-map 25 --seed 2` is **not** disjoint
+from the seed-0 and seed-1 samples — all three draw from the same 1,988-demo
+listing, and seed 2 shares 2 demos with seed 0 and 3 with seed 1. Section 9
+subtracts those 5 by name rather than assuming a fresh seed is enough.
 
 ## Eval-set burn
 
 The seed-0 pro set had been used for the v3, v4 and v5 gate decisions. This run
-makes four, and within this run **44 candidate arrival definitions were scored
-against it**. It is a tuning set now and no verdict should rest on it again.
-That is why the confirmation runs use fresh seeds, and why section 5 declines to
-call the one passing candidate a pass.
+makes four, and within this run **44 candidate arrival definitions and 144
+`snap_kills` candidates were scored against it** — 188 looks, pooled with seed 1
+for sections 5b and 7. Both are tuning sets now and no verdict rests on them: the
+verdict is read off seed 2 in section 9, which was never used for selection.
 
 ## What was not tested
 

@@ -1,21 +1,41 @@
 """Tests for triggerbot timing: which shot counts, and when the crosshair arrived.
 
 Windows built by hand, where the answer is obvious: a target 800 units away, so
-"on the head" (8 units) is about 0.57 degrees.
+"on the head" (8 units) is about 0.57 degrees. The crosshair sweeps at SWEEP deg
+a tick unless a test says otherwise; an arrival needs it to be moving at
+ARRIVAL_SWEEP_DPS or more (the arrival redesign), since otherwise it is the enemy who arrived.
 """
 
 import polars as pl
 
+from overwatch.aim import TICK_RATE
 from overwatch.layers.l3_behavior.player_features import MIN_ARRIVAL_KILLS
-from overwatch.layers.l3_behavior.shots import arrival_features, mark_shots
+from overwatch.layers.l3_behavior.shots import (
+    ARRIVAL_SWEEP_DPS,
+    arrival_features,
+    mark_shots,
+)
 
 OFF, ON = 6.0, 0.2  # degrees from the head: well off, squarely on
+#: A tick's worth of crosshair motion at twice the sweep the redesign requires.
+SWEEP = 2 * ARRIVAL_SWEEP_DPS / TICK_RATE
+#: A crosshair standing still: the enemy is the one who moved.
+HELD = 0.0
 
 
 def _window(
-    uid: str, angles: dict[int, float], shots: set[int], first: int = -60
+    uid: str,
+    angles: dict[int, float],
+    shots: set[int],
+    first: int = -60,
+    sweep: dict[int, float] | float = SWEEP,
 ) -> pl.DataFrame:
     offsets = list(range(first, 1))
+    steps = (
+        [sweep] * len(offsets)
+        if isinstance(sweep, float)
+        else [sweep.get(o, SWEEP) for o in offsets]
+    )
     return pl.DataFrame(
         {
             "window_uid": uid,
@@ -23,6 +43,9 @@ def _window(
             "target_angle": [angles.get(o, OFF) for o in offsets],
             "target_distance": 800.0,
             "shot": [o in shots for o in offsets],
+            "d_yaw": steps,
+            "d_pitch": 0.0,
+            "pitch": 0.0,
         }
     )
 
@@ -46,6 +69,32 @@ def test_a_shot_on_the_arrival_tick_counts_and_one_later_does_not() -> None:
     )
     assert got["instant"] == (True, 0.0)
     assert got["human"] == (False, 62.5)
+
+
+def test_the_enemy_walking_into_a_held_crosshair_is_not_an_arrival() -> None:
+    """The angle closes, but the crosshair never moved, so nothing arrived.
+
+    This is the pro holding a pre-aimed angle and firing because they were already
+    aimed at it. Counting it was why 22 of 341 pros sat past the v5 line.
+    """
+    got = _result(
+        _window("walked-in", _on_from(-10), {-10}, sweep={-10: HELD}),
+        _window(
+            "crept-in",
+            _on_from(-10),
+            {-10},
+            sweep={-10: 0.9 * ARRIVAL_SWEEP_DPS / TICK_RATE},
+        ),
+    )
+    assert got == {}
+
+
+def test_a_later_arrival_by_the_crosshair_is_the_one_that_counts() -> None:
+    """Off the head, back on twice: only a swept arrival can be the last one."""
+    angles = _on_from(-30, -21) | _on_from(-10)
+    got = _result(_window("swept-then-held", angles, {-10}, sweep={-10: HELD}))
+    # the -10 re-arrival is the enemy's, so the -30 sweep stands and the shot is late
+    assert got["swept-then-held"] == (False, 20 / 64 * 1000)
 
 
 def test_a_pre_aimed_kill_has_no_arrival() -> None:

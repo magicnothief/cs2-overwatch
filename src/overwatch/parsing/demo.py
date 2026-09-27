@@ -8,7 +8,7 @@ process boundary is the fix.
 
 What is left in this process is a parquet read of files our own child wrote,
 whose *contents* still come from the demo. That is a far smaller surface than a
-protobuf parser, not a zero one. See MAG-8 for the residual risk.
+protobuf parser, not a zero one.
 """
 
 from __future__ import annotations

@@ -265,10 +265,12 @@ def _measurements(text: str) -> list[str]:
 
 
 class TestAJudgeOnlyReadsWhatItWasTrainedOn:
-    """`snap_kills` and `arrival_shot_share` were measured for judge v5. Rendered into
-    v4's prompt they are an input shape it has never seen, and — because the clean
-    reference v4 shipped with has no baseline for either — bare numbers, which breaks
-    the first rule of the format. So the text follows the pinned judge, not the code.
+    """`snap_kills` and `arrival_shot_share` are the judge v6 pair (the arrival redesign changed
+    both; v5 trained on the pre-redesign definitions and is not shipped). Rendered
+    into v4's prompt they are an input shape it has never seen, and — because the
+    clean reference v4 shipped with has no baseline for either — bare numbers, which
+    breaks the first rule of the format. So the text follows the pinned judge, not
+    the code.
     """
 
     def _both(self) -> PlayerCase:
@@ -294,21 +296,30 @@ class TestAJudgeOnlyReadsWhatItWasTrainedOn:
             "time aimed at an enemy they could not see",
         ]
 
-    def test_v5_is_shown_both_measurements(self) -> None:
+    def test_v5_is_shown_neither_measurement(self) -> None:
+        # v5's training data holds the pre-redesign definitions of both, so the same
+        # number means a different thing to it
+        shown = _measurements(render_case(self._both(), judge=5))
+        assert shown == [
+            "flicks that never change direction",
+            "time aimed at an enemy they could not see",
+        ]
+
+    def test_v6_is_shown_both_measurements(self) -> None:
         text = render_case(self._both(), judge=LATEST_JUDGE)
         assert _measurements(text) == [
             "flicks that never change direction",
             "time aimed at an enemy they could not see",
-            "kills with a turn over 200 deg/s on the kill tick",
-            "kills fired on the very tick the crosshair reached the head",
+            "kills with a turn over 175 deg/s on the kill tick",
+            "kills fired on the very tick the crosshair swept onto the head",
         ]
         # and with their baselines, as every figure in this format is
         assert (
-            "- kills with a turn over 200 deg/s on the kill tick: 7.0 "
+            "- kills with a turn over 175 deg/s on the kill tick: 7.0 "
             "(clean 1.0, higher is suspicious)" in text
         )
         assert (
-            "- kills fired on the very tick the crosshair reached the head: 0.46 "
+            "- kills fired on the very tick the crosshair swept onto the head: 0.46 "
             "(clean 0.09, higher is suspicious)" in text
         )
 

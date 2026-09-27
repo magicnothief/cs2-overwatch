@@ -16,9 +16,13 @@ from __future__ import annotations
 
 import polars as pl
 
-#: A kill-tick turn above this is far outside anything clean play produces
-#: (clean p99 is ~139 deg/s over the CS2CD sample).
-SNAP_THRESHOLD_DPS = 200.0
+#: A kill-tick turn above this counts towards `snap_kills`. 175, not 200, from the
+#: sweep in docs/evals/2026-09-26-arrival-redesign.md: at 175 deg/s with the
+#: kill floor targets.py applies, CS2CD cheaters past the notable line are 10.39%
+#: against clean 0.90% (lift 11.49x, against 200 deg/s's 8.14x), and 3 of 687 pros
+#: are past it against 13 at the shipped definition. The count, not the single
+#: fastest turn, is what the judge reads (`snap_kills`).
+SNAP_THRESHOLD_DPS = 175.0
 
 #: Straightness this close to 1 means the flick never reversed direction.
 STRAIGHT_EPS = 0.999

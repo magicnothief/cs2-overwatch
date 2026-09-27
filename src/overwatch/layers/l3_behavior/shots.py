@@ -10,13 +10,23 @@ a little before. So, per kill:
                    re-arrival by chance
     arrival        the last tick, at or before the opening shot, on which the
                    crosshair came onto the enemy's head (within HEAD_RADIUS world
-                   units of its centre, as an angle for their distance)
+                   units of its centre, as an angle for their distance) *by its
+                   own motion*, sweeping at ARRIVAL_SWEEP_DPS or more
     arrival_shot   the opening shot came on that very tick
 
 On CS2CD (spec: docs/specs/2026-09-26-triggerbot-and-snap-count.md), no clean
 player of 583 fired on the arrival tick on over half their kills; 11% of banned
 players did. Kills where the crosshair was already on the spot (pre-aimed) have
 no arrival and are not counted either way.
+
+The sweep requirement is the arrival redesign
+(docs/evals/2026-09-26-arrival-redesign.md). Without it, the crosshair-to-head
+angle also closes when the *enemy* walks into a held crosshair, which is a pro
+holding a pre-aimed angle and firing because they were already aimed. Clean CS2CD
+players who fired on an arrival tick were moving the crosshair at a median 35.6
+deg/s when they did; cheaters at 91.2. Counting only arrivals the crosshair
+itself made lifts CS2CD separation from 4.41x to 9.13x and cuts the share of
+clean players flagged from 2.5165% to 0.3909%.
 """
 
 from __future__ import annotations
@@ -33,6 +43,11 @@ HEAD_RADIUS = 8.0
 MIN_DISTANCE = 50.0
 #: Ticks without a shot that end a burst (300 ms).
 BURST_GAP = 19
+#: How fast the crosshair itself must be moving, in deg/s, on the tick it comes
+#: onto the head for that to count as an arrival. Chosen in
+#: docs/evals/2026-09-26-arrival-redesign.md over a 9 x 6 grid of (speed, minimum
+#: eligible kills) against criteria fixed on CS2CD before the pro sample was read.
+ARRIVAL_SWEEP_DPS = 50.0
 #: Weapons whose "shot" is not an aimed one.
 NOT_AIMED = "knife|bayonet|grenade|molotov|flashbang|decoy|c4|healthshot"
 
@@ -81,6 +96,16 @@ def arrival_features(window_ticks: pl.DataFrame) -> pl.DataFrame:
     ticks = ticks.with_columns(
         arrives=pl.col("on_head").fill_null(False)
         & ~pl.col("on_head").shift(1).over("window_uid").fill_null(True)
+        # the crosshair's own angular step over this tick, yaw scaled by pitch
+        & (
+            (
+                (pl.col("d_yaw") * pl.col("pitch").radians().cos()) ** 2
+                + pl.col("d_pitch") ** 2
+            )
+            ** 0.5
+            * TICK_RATE
+            >= ARRIVAL_SWEEP_DPS
+        ).fill_null(False)
     )
     shots = (
         ticks.filter(pl.col("shot") & (pl.col("tick_offset") <= 0))
@@ -113,6 +138,7 @@ def arrival_features(window_ticks: pl.DataFrame) -> pl.DataFrame:
 
 
 __all__ = [
+    "ARRIVAL_SWEEP_DPS",
     "BURST_GAP",
     "HEAD_RADIUS",
     "SHOT_COLUMNS",
