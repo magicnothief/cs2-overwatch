@@ -90,6 +90,24 @@ clean CS2CD players, as the judge's do.
 A measurement that fails stays out of v6; the others go ahead. The thresholds
 above are fixed here and not tuned after the numbers are read.
 
+#### 2a. Triggerbot timing, second check (added 2026-09-27, after the first read)
+
+`arrival_shot_share` failed the table above: 4 of 253 shown pros past its 95% line
+(1.58%). A spike (`docs/evals/2026-09-27-triggerbot-pros-spike.md`) found them to
+be riflers on 3 of 5 or 6 kills, and pros as a group past the line less often than
+clean CS2CD players (1.58% against 5.25%). The 1% ceiling was written when one
+line could accuse on its own; since 0.5.1 none can. The user chose to change the
+criterion, **after seeing those numbers**, to:
+
+- at most as many pros past the 95% line as clean CS2CD players (5%), of those
+  shown and of all; and
+- at most 1% of shown pros past the 99% line.
+
+Because it was changed after a read, it is judged only on a fresh sample:
+`pro_arrival_lab.py --per-map 25 --seed 3`, minus every demo of the three samples
+read before (seed 0, seed 1, the seed-2 175). Nothing about the measurement
+changes between the two reads.
+
 ### 3. When a target says `cheating`: corroboration
 
 A `cheating` target needs one of:
