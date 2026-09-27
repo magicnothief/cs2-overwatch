@@ -54,3 +54,21 @@ second line past its own and one of them past 99%. Pros past this measurement's
   25 --seed 3`, never read, about two hours of CPU). This is a change made after
   seeing the numbers, which is why it cannot be settled on the sample that
   prompted it.
+
+## The second check: passes
+
+The user took the second option. The criterion went into the spec (section 2a,
+`6dedc09`) and the read into `training/v6/pro_check_triggerbot_2a.py`
+(`05e31e4`) before the sample was fetched. `pro_arrival_lab.py --per-map 25
+--seed 3`: 175 matches fetched, none failed, 23 dropped because an earlier sample
+had them, **152 fresh**, 1,483 pro player-matches.
+
+| | criterion | fresh sample |
+|---|---|---|
+| shown pros past the 95% line | at most clean CS2CD's 5.25% | **1.43%** (3 of 210) |
+| all pros past the 95% line | at most 5.25% | **0.20%** |
+| shown pros past the 99% line | at most 1% | **0%** (0 of 210) |
+
+The seed-2 read (1.58% of shown, 0 past 99%) reproduces within 0.15 points on a
+sample that shares no demo with it. Triggerbot timing is back among v6's
+candidate measurements.
