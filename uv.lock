@@ -368,18 +368,18 @@ train = [
 
 [package.metadata]
 requires-dist = [
-    { name = "demoparser2", specifier = ">=0.42.0" },
+    { name = "demoparser2", specifier = ">=0.42.0,<0.43.0" },
     { name = "embreex", specifier = ">=4.4.0" },
-    { name = "fastapi", specifier = ">=0.141.1" },
+    { name = "fastapi", specifier = ">=0.141.1,<0.142.0" },
     { name = "numpy", specifier = ">=2" },
     { name = "onnxruntime", specifier = ">=1.30.0" },
     { name = "pillow", specifier = ">=11" },
     { name = "platformdirs", specifier = ">=4" },
     { name = "polars", specifier = ">=1.44.2" },
-    { name = "pydantic", specifier = ">=2.13.5" },
+    { name = "pydantic", specifier = ">=2.13.5,<3" },
     { name = "scipy", specifier = ">=1.16" },
     { name = "trimesh", specifier = ">=5.1.0" },
-    { name = "uvicorn", specifier = ">=0.53.0" },
+    { name = "uvicorn", specifier = ">=0.53.0,<0.54.0" },
     { name = "zstandard", specifier = ">=0.23" },
 ]
 
