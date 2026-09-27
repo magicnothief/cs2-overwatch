@@ -654,10 +654,11 @@ function killDetail(k, radarMeta, mapName, shooter) {
   if (k.aim_through_cover != null) measured.push(`The crosshair was on the enemy through cover for ${pct(k.aim_through_cover)} of the last half second.`);
   if (k.seen_first === false) measured.push("The enemy was never visible before dying.");
   else if (k.reaction_ms != null && k.reaction_ms < 1990) measured.push(`The kill came ${Math.round(k.reaction_ms)} ms after the enemy became visible.`);
+  // "came under", not "reached": shots.py also counts an enemy walking into a held crosshair
   if (k.arrival_delay_ms != null) {
     measured.push(k.arrival_delay_ms === 0
-      ? "The first shot came on the very tick the crosshair reached the head."
-      : `The first shot came ${Math.round(k.arrival_delay_ms)} ms after the crosshair reached the head.`);
+      ? "The first shot came on the very tick the head came under the crosshair."
+      : `The first shot came ${Math.round(k.arrival_delay_ms)} ms after the head came under the crosshair.`);
   }
   if (k.distance != null) setting.push(`${Math.round(k.distance)} m away${k.walls_penetrated ? `, through ${k.walls_penetrated === 1 ? "a wall" : `${k.walls_penetrated} walls`}` : ""}.`);
   if (k.context) setting.push(`${sentence(k.context)}.`);

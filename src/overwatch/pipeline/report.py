@@ -58,7 +58,7 @@ class KillReport(BaseModel):
     )
     arrival_delay_ms: float | None = Field(
         default=None,
-        description="opening shot's delay after the crosshair reached the head; "
+        description="opening shot's delay after the head came under the crosshair; "
         "0 is the very tick (triggerbot timing, shots.py)",
     )
     seen_first: bool | None = Field(
