@@ -42,6 +42,10 @@ none), for: `player_death`, `player_hurt`, `weapon_fire`, `round_freeze_end`,
 `round_start`. `player_death` is normalized to `tick, attacker_id, victim_id, weapon,
 headshot` plus whatever extras the source carried (`distance`, `penetrated`, …).
 
+`EVENTS_REPLAY` (smokes, fires, the bomb) are read from a demo in one pass, only for
+the round replay, and are present only when the demo has them: CS2CD has none, and
+nothing that feeds the evidence reads them.
+
 `meta` holds `source` (`"dem"` / `"cs2cd"`), `map`, `tick_rate`, and per-source extras:
 `sha256` for demos, `cheaters` and `avg_rank` for CS2CD.
 

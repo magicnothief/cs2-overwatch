@@ -39,6 +39,20 @@ EVENTS_NEEDED: tuple[str, ...] = (
     "round_start",
 )
 
+#: Events only the round replay reads: smokes, fires and the bomb. Parsed from a
+#: demo when it has them and never required; CS2CD has none of them.
+EVENTS_REPLAY: tuple[str, ...] = (
+    "smokegrenade_detonate",
+    "smokegrenade_expired",
+    "inferno_startburn",
+    "inferno_expire",
+    "bomb_pickup",
+    "bomb_dropped",
+    "bomb_planted",
+    "bomb_defused",
+    "bomb_exploded",
+)
+
 
 class DemoParseError(RuntimeError):
     """A demo could not be parsed: the worker crashed, timed out, or wrote nothing.

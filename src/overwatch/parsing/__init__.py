@@ -5,6 +5,7 @@ from overwatch.parsing.cs2cd import load_cs2cd
 from overwatch.parsing.demo import parse_demo
 from overwatch.parsing.types import (
     EVENTS_NEEDED,
+    EVENTS_REPLAY,
     TICK_COLUMNS,
     DemoParseError,
     ParsedMatch,
@@ -12,6 +13,7 @@ from overwatch.parsing.types import (
 
 __all__ = [
     "EVENTS_NEEDED",
+    "EVENTS_REPLAY",
     "TICK_COLUMNS",
     "DemoParseError",
     "ParsedMatch",

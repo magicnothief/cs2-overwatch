@@ -11,6 +11,8 @@ import pytest
 from overwatch.aim import add_aim_features, kill_windows
 from overwatch.demos import DEMO_MAGIC
 from overwatch.parsing import (
+    EVENTS_NEEDED,
+    EVENTS_REPLAY,
     TICK_COLUMNS,
     DemoParseError,
     load_cs2cd,
@@ -56,6 +58,42 @@ def test_parse_demo() -> None:
         "headshot",
     }
     assert match.ticks["player_id"].dtype == pl.String
+
+
+@pytest.mark.skipif(not DEMO.exists(), reason="demo not downloaded")
+def test_a_demo_brings_the_replay_events_it_has() -> None:
+    match = parse_demo(DEMO, hash_file=False)
+    replay = [name for name in match.events if name in EVENTS_REPLAY]
+    assert replay, "a matchmaking demo has smokes, fires or the bomb"
+    for name in replay:
+        assert match.events[name].height > 0
+        assert "player_id" in match.events[name].columns
+    if "smokegrenade_detonate" in match.events:
+        assert {"entityid", "x", "y"} <= set(
+            match.events["smokegrenade_detonate"].columns
+        )
+
+
+def test_replay_events_are_optional_and_come_back_in_order(tmp_path: Path) -> None:
+    """A demo without smokes or a bomb still parses; the ones it has follow the rest."""
+    empty = pl.DataFrame({"tick": []}, schema={"tick": pl.Int32})
+    some = pl.DataFrame(
+        {"tick": [5], "entityid": [1]}, schema={"tick": pl.Int32, "entityid": pl.Int32}
+    )
+    ticks = pl.read_parquet(FIXTURES / "mini_ticks.parquet")
+    events = {name: empty for name in EVENTS_NEEDED}
+    worker.write_match(
+        worker.ParsedMatch(ticks=ticks, events=events, meta={}), tmp_path / "none"
+    )
+    assert list(worker.read_match(tmp_path / "none").events) == list(EVENTS_NEEDED)
+
+    events = {"inferno_expire": some, **events, "smokegrenade_detonate": some}
+    worker.write_match(
+        worker.ParsedMatch(ticks=ticks, events=events, meta={}), tmp_path / "some"
+    )
+    back = worker.read_match(tmp_path / "some").events
+    assert list(back) == [*EVENTS_NEEDED, "smokegrenade_detonate", "inferno_expire"]
+    assert back["inferno_expire"].equals(some)
 
 
 @pytest.mark.skipif(not DEMO.exists(), reason="demo not downloaded")

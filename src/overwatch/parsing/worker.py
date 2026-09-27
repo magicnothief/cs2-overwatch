@@ -25,6 +25,7 @@ import polars as pl
 
 from overwatch.parsing.types import (
     EVENTS_NEEDED,
+    EVENTS_REPLAY,
     TICK_COLUMNS,
     DemoParseError,
     ParsedMatch,
@@ -165,6 +166,15 @@ def parse_in_process(path: str | Path) -> ParsedMatch:
             events[name] = _normalize_deaths(raw)
         else:
             events[name] = _normalize_generic_event(raw)
+    # the replay's events in one pass over the demo, ten times faster than one
+    # parse_event each; the ones above stay as they were, since the evidence
+    # the judge reads is built from them
+    replay = [name for name in EVENTS_REPLAY if name in available]
+    found = dict(parser.parse_events(replay)) if replay else {}
+    for name in replay:  # in EVENTS_REPLAY order, which read_match keeps too
+        raw = pl.from_pandas(found[name]) if name in found else pl.DataFrame()
+        if not raw.is_empty():
+            events[name] = _normalize_generic_event(raw)
 
     header = parser.parse_header()
     meta = {
@@ -192,16 +202,18 @@ def write_match(match: ParsedMatch, out_dir: Path) -> None:
 def read_match(out_dir: Path) -> ParsedMatch:
     """Read back what write_match wrote. Runs in the parent.
 
-    Events come back in EVENTS_NEEDED order, not the order the directory lists
-    them in, so a ParsedMatch from a worker is the one a direct parse gives.
+    Events come back in EVENTS_NEEDED then EVENTS_REPLAY order, not the order
+    the directory lists them in, so a ParsedMatch from a worker is the one a
+    direct parse gives. A replay event the demo did not have is simply absent.
     """
     files = {file.stem: file for file in (out_dir / EVENTS_DIR).glob("*.parquet")}
     missing = [name for name in EVENTS_NEEDED if name not in files]
     if missing:
         raise DemoParseError(f"the parser left no tables for {', '.join(missing)}")
+    wanted = [name for name in EVENTS_NEEDED + EVENTS_REPLAY if name in files]
     try:
         ticks = pl.read_parquet(out_dir / TICKS_FILE)
-        events = {name: pl.read_parquet(files[name]) for name in EVENTS_NEEDED}
+        events = {name: pl.read_parquet(files[name]) for name in wanted}
         meta = json.loads((out_dir / META_FILE).read_text())
     except (OSError, ValueError) as exc:
         raise DemoParseError(f"the parser left no readable tables: {exc}") from exc
