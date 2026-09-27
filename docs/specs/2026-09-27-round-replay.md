@@ -1,8 +1,11 @@
 # Round replay (design C)
 
-Status: design approved in conversation on 2026-09-26; this spec is for review.
-Brainstormed with the superpowers brainstorming process, architectural path.
-Ships in 0.5.0. No judge change.
+Status: approved 2026-09-27. Revised the same day after step 0: the "look here"
+marks failed their gate and are cut, and "who sees whom" comes from the mesh ray
+cast instead of the game's spotting flag (docs/evals/2026-09-27-replay-marks-gate.md;
+the user chose the ray cast, smokes not counted). Brainstormed with the
+superpowers brainstorming process, architectural path. Ships in 0.5.0. No judge
+change.
 
 ## Why
 
@@ -19,7 +22,8 @@ question on the page itself, without CS2.
 | what it shows besides players | smokes and fires, shots, the bomb, flashed players |
 | where it lives | under the timeline (the approved "Round under the timeline" layout) |
 | where its data comes from | saved at analysis, beside the report |
-| "look here" marks | in, behind the step 0 gate below |
+| "look here" marks | cut: failed the step 0 gate on CS2CD |
+| who sees whom | the mesh ray cast plus the field of view, as the evidence; smokes drawn, not counted |
 
 ## 1. The page
 
@@ -41,7 +45,7 @@ Round 9    Play   1x 2x 4x    0:41 since the round began   demo_gototick 51234 [
 |  player's cone strongest |       ...           playhead
 +--------------------------+
 Enemies of Player A: solid, they see them. Outline, a teammate sees them.
-Faint, nobody on their team does (sound is not in a demo).
+Faint, nobody on their team does. Walls count; smokes and sound do not.
 [ Watch these first ... | player panel ... ]
 ```
 
@@ -108,8 +112,11 @@ Faint, nobody on their team does (sound is not in a demo).
 
 ### Following a player: what they knew
 
-A followed player P sees every enemy E drawn one of three ways, from the game's
-own spotting flags (`spotted_by`):
+A player sees an enemy when nothing on the map mesh blocks the line from their
+eye to the enemy's head (`occlusion.line_of_sight`, the evidence's own line of
+sight) and the enemy is on their screen (`angles.in_field_of_view`, 106 deg). Not
+the game's `spotted` flag: it misses a third of real sightings (step 0). A
+followed player P sees every enemy E drawn one of three ways:
 
 | E is | drawn |
 |---|---|
@@ -117,24 +124,19 @@ own spotting flags (`spotted_by`):
 | seen by a teammate of P only (so on P's radar) | outline only |
 | seen by nobody on P's team | faint ghost |
 
-Teammates of P are drawn normally. The key under the radar says it in words,
-including that sound is not in a demo: "faint" means nobody on the team saw them,
-not that P could not have heard them.
+Teammates of P are drawn normally. The key under the radar says it in words:
+walls count, smokes and sound do not, so "faint" means no one on the team had
+them in sight past a wall, not that P could not have heard them. On a map with no
+mesh there is no "who sees whom": following only strengthens the cone, and the
+key says why.
 
-### "Look here" marks
+### No "look here" marks
 
-A mark goes on P's lane, in `--flag`, where P's crosshair followed an enemy
-nobody on P's team could see:
-
-- E is alive and seen by nobody on P's team, on every sample of the stretch;
-- the angle between P's view and E's head is under 5 deg (`ON_TARGET_DEG`, the
-  "aimed through cover" threshold the evidence already uses) on every sample;
-- the stretch lasts at least 0.5 s;
-- E's bearing from P changes by at least 10 deg across it, so P is following a
-  moving enemy, not holding an angle E walks along.
-
-While a mark's stretch plays, a dashed `--flag` line joins P to E. Marks never
-reach the judge; turning them into evidence is design D.
+The spec's marks (a crosshair within 5 deg of an unseen enemy for 0.5 s while
+their bearing turns 10 deg) failed the step 0 gate: 78% of clean CS2CD players
+get one in a match. The replay has none, and magenta keeps meaning "look here"
+only where the rest of the page puts it. The count difference the gate found
+(cheaters' median twice clean's) belongs to design D.
 
 ## 2. The data
 
@@ -156,18 +158,18 @@ and analysis writes it beside the report as `<report id>.replay.json.gz`.
 Per round, from the end of the freeze to the round's end:
 
 - players: id, side that round, and every 4th tick (16 per second) x, y, z
-  (whole units), yaw (whole degrees), health, alive, blind, and who sees them as
-  a bitmask over the match's players;
+  (whole units), yaw (whole degrees), health, alive, blind, and the enemies they
+  see (as defined above) as a bitmask over the match's players;
 - shots and deaths at their exact ticks;
 - smokes and fires as (start, end, x, y); a smoke with no expiry event ends 18 s
   after detonation or at the round's end, a fire at its round's end;
 - the bomb as a list of (tick, what, who, x, y); the carrier before the first
-  pickup is unknown and drawn nowhere;
-- marks per player: (start tick, end tick, enemy).
+  pickup is unknown and drawn nowhere.
 
 Budget: at most 2 MB compressed for a full 24-round match (measured: 0.08 MB for
-a 10-round Wingman match at 16 per second), built in under 2 s. The report gains
-`replay: bool`.
+a 10-round Wingman match at 16 per second), built in under 2 s with the ray casts
+(0.2 s per CS2CD match once the mesh is loaded, which layer 2 has already done).
+The report gains `replay: bool`.
 
 ### Serving it
 
@@ -182,23 +184,17 @@ and one line under the timeline says "Replays need the demo analysed again with
 
 ## 3. Checks
 
-**Step 0, before any mark is drawn: the marks gate on CS2CD.** CS2CD has the
-spotting flags, so the rule above runs on its matches as is, with the thresholds
-fixed here and not tuned afterwards. Marks ship only if both hold:
-
-1. at most 10% of clean players get one or more marks in a match;
-2. banned players get one at least twice as often as clean players do.
-
-If either fails, the marks are cut and the replay ships without them. The
-numbers go to `docs/evals/`.
+**Step 0, done: the marks gate on CS2CD.** Marks were to ship only if at most 10%
+of clean players got one in a match and banned players got one at least twice as
+often. Both runs failed (docs/evals/2026-09-27-replay-marks-gate.md); the marks
+are cut.
 
 **Tests.**
-- Building: sampling every 4th tick, the side per round, the seen-by bitmask.
+- Building: sampling every 4th tick, the side per round, the sees bitmask.
+- Who sees whom on a made-up mesh: a wall blocks, an enemy behind the viewer is
+  not seen, a clear line in front is.
 - Smokes and fires paired by entity id, and the missing-expiry rules.
 - The bomb's carrier from pickups and drops.
-- The mark rule on made-up ticks: an enemy tracked through a wall gives a mark;
-  an enemy walking along a held angle, one crossing it, and a seen enemy give
-  none.
 - The endpoint: gzip headers, 404 without a replay, a bad id refused.
 - The worker: a demo without the new events still parses.
 
@@ -213,12 +209,13 @@ Weapons held, money, grenade flight paths, sound, and anything the judge reads.
 
 ## Risks
 
-- **The spotting flags are the game's approximation.** CS2 fills `spotted_by`
-  for its own radar; it is not a ray cast. The replay says what the game thought
-  each team saw, and the key says so. The mesh ray cast stays the evidence.
-- **Sound is invisible.** A "faint" enemy can still be heard. The key says it,
-  and the marks require following a moving enemy for half a second, which sound
-  alone rarely explains.
+- **The ray cast is eye to head.** A crouched player, or one showing only a
+  shoulder, can be seen with the head line blocked, and the other way round. It
+  is the same line the evidence uses, so the replay never contradicts a kill's
+  facts.
+- **Smokes and sound are not counted.** A "faint" enemy may have been heard, and
+  a "solid" one may have been inside a smoke. Smokes are drawn, and the key says
+  both.
 - **Report size.** A whole match of samples is new data per report; the budget
   above is checked in the tests on the fixture demo.
 - **Page rebuilds.** The router rebuilds the report on every hash change; the
@@ -226,13 +223,13 @@ Weapons held, money, grenade flight paths, sound, and anything the judge reads.
 
 ## Plan
 
-0. Marks gate on CS2CD (`training/replay/marks_gate.py`), results in
-   `docs/evals/`. Decides whether step 5 draws marks.
+0. Done: marks gate on CS2CD (`training/replay/marks_gate.py`); failed, marks
+   cut.
 1. Worker parses the replay events; tests.
-2. `pipeline/replay.py`, the marks included if step 0 passed; tests.
+2. `pipeline/replay.py`: samples, who sees whom, events; tests.
 3. Analysis writes the file, the report gains `replay`, the endpoint; tests.
 4. `fake_report` writes a synthetic replay.
 5. The page: shared radar helpers (the kill radar unchanged, screenshot before
-   and after), the round section, lanes, playback, following, marks, address and
+   and after), the round section, lanes, playback, following, address and
    keyboard. Screenshot-checked on desktop, phone and Nuke.
 6. `web/DESIGN.md` section, README line, CHANGELOG, then 0.5.0.
