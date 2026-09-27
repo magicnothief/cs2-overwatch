@@ -189,7 +189,9 @@ def main() -> None:
     )
     players.write_parquet(PROCESSED / "player_features.parquet")
     if features_only:
-        print(f"wrote {PROCESSED / 'player_features.parquet'} ({players.height} players)")
+        print(
+            f"wrote {PROCESSED / 'player_features.parquet'} ({players.height} players)"
+        )
         return
 
     feature_names = [c for c in PLAYER_FEATURE_COLUMNS if c in players.columns]

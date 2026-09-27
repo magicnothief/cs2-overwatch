@@ -82,7 +82,7 @@ def crossing_count(line: float, min_arrival: int, cap: int = 60) -> int:
         (
             shots
             for n in range(min_arrival, cap + 1)
-            for shots in range(0, n + 1)
+            for shots in range(n + 1)
             if shots / n > line
         ),
         default=cap,
@@ -101,7 +101,10 @@ def evaluate(cs2cd: pl.DataFrame, pro: pl.DataFrame) -> list[dict]:
         for k in SWEEP_MIN:
             cv = np.where(cn >= k, np.divide(cx, np.where(cn > 0, cn, 1)), np.nan)
             pv = np.where(pn >= k, np.divide(px, np.where(pn > 0, pn, 1)), np.nan)
-            eligible_clean, eligible_cheat = clean & ~np.isnan(cv), cheat & ~np.isnan(cv)
+            eligible_clean, eligible_cheat = (
+                clean & ~np.isnan(cv),
+                cheat & ~np.isnan(cv),
+            )
             if eligible_clean.sum() < 30:
                 continue
             line95 = float(np.quantile(cv[eligible_clean], 0.95))
@@ -112,36 +115,40 @@ def evaluate(cs2cd: pl.DataFrame, pro: pl.DataFrame) -> list[dict]:
             crossing = crossing_count(line95, k)
             shown = ~np.isnan(pv)
             rows.append(
-                dict(
-                    dps="v5_any" if dps is None else f">={dps}",
-                    min_arrival=k,
-                    line95=round(line95, 4),
-                    line99=round(line99, 4),
-                    crossing_count=crossing,
-                    coverage=round(coverage, 4),
-                    clean_past=round(clean_past, 4),
-                    cheat_past=round(cheat_past, 4),
-                    lift=round(cheat_past / clean_past, 2) if clean_past else None,
-                    s1=bool(crossing >= 3),
-                    s2=bool(cheat_past >= V5_CHEATER_PAST),
-                    s3=bool((cheat_past / clean_past if clean_past else 0) >= V5_LIFT),
-                    s4=bool(coverage >= MIN_COVERAGE),
-                    pro_n=n_pro,
-                    pro_shown=int(shown.sum()),
-                    pro_past95=int((pv[shown] > line95).sum()),
-                    pro_past99=int((pv[shown] > line99).sum()),
-                    pro_of_all=round(float((pv[shown] > line95).sum()) / n_pro, 4),
-                    pro_of_shown=round(
+                {
+                    "dps": "v5_any" if dps is None else f">={dps}",
+                    "min_arrival": k,
+                    "line95": round(line95, 4),
+                    "line99": round(line99, 4),
+                    "crossing_count": crossing,
+                    "coverage": round(coverage, 4),
+                    "clean_past": round(clean_past, 4),
+                    "cheat_past": round(cheat_past, 4),
+                    "lift": round(cheat_past / clean_past, 2) if clean_past else None,
+                    "s1": bool(crossing >= 3),
+                    "s2": bool(cheat_past >= V5_CHEATER_PAST),
+                    "s3": bool(
+                        (cheat_past / clean_past if clean_past else 0) >= V5_LIFT
+                    ),
+                    "s4": bool(coverage >= MIN_COVERAGE),
+                    "pro_n": n_pro,
+                    "pro_shown": int(shown.sum()),
+                    "pro_past95": int((pv[shown] > line95).sum()),
+                    "pro_past99": int((pv[shown] > line99).sum()),
+                    "pro_of_all": round(float((pv[shown] > line95).sum()) / n_pro, 4),
+                    "pro_of_shown": round(
                         float((pv[shown] > line95).sum()) / max(int(shown.sum()), 1), 4
                     ),
-                    pro_pooled=round(float(px[shown].sum() / max(pn[shown].sum(), 1)), 4),
-                    clean_pooled=round(
+                    "pro_pooled": round(
+                        float(px[shown].sum() / max(pn[shown].sum(), 1)), 4
+                    ),
+                    "clean_pooled": round(
                         float(cx[eligible_clean].sum() / cn[eligible_clean].sum()), 4
                     ),
-                    cheat_pooled=round(
+                    "cheat_pooled": round(
                         float(cx[eligible_cheat].sum() / cn[eligible_cheat].sum()), 4
                     ),
-                )
+                }
             )
     return rows
 
@@ -155,9 +162,25 @@ def main() -> None:
 
     rows = evaluate(load(args.cs2cd), load(args.pro))
     head = [
-        "dps", "min_arrival", "line95", "crossing_count", "coverage", "clean_past",
-        "cheat_past", "lift", "s1", "s2", "s3", "s4", "pro_shown", "pro_past95",
-        "pro_of_all", "pro_of_shown", "pro_past99", "pro_pooled", "clean_pooled",
+        "dps",
+        "min_arrival",
+        "line95",
+        "crossing_count",
+        "coverage",
+        "clean_past",
+        "cheat_past",
+        "lift",
+        "s1",
+        "s2",
+        "s3",
+        "s4",
+        "pro_shown",
+        "pro_past95",
+        "pro_of_all",
+        "pro_of_shown",
+        "pro_past99",
+        "pro_pooled",
+        "clean_pooled",
         "cheat_pooled",
     ]
     print("\t".join(head))
@@ -167,7 +190,9 @@ def main() -> None:
     passing = [r for r in rows if r["s1"] and r["s2"] and r["s3"] and r["s4"]]
     print(f"\n{len(passing)} of {len(rows)} candidates pass S1-S4 on CS2CD alone:")
     for r in sorted(passing, key=lambda r: -r["lift"]):
-        gate3 = "PASS" if r["pro_of_all"] <= 0.01 and r["pro_of_shown"] <= 0.01 else "FAIL"
+        gate3 = (
+            "PASS" if r["pro_of_all"] <= 0.01 and r["pro_of_shown"] <= 0.01 else "FAIL"
+        )
         print(
             f"  crosshair {r['dps']} deg/s, MIN {r['min_arrival']}: line95 {r['line95']}, "
             f"lift {r['lift']}, shown to {r['coverage']:.1%} of clean, "

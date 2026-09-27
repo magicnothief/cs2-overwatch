@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+from typing import Self
 
 import pytest
 
@@ -61,15 +62,13 @@ def _answer(monkeypatch: pytest.MonkeyPatch, payload: dict) -> None:
         def read(self) -> bytes:
             return json.dumps(payload).encode()
 
-        def __enter__(self) -> "Response":
+        def __enter__(self) -> Self:
             return self
 
         def __exit__(self, *_: object) -> None:
             return None
 
-    monkeypatch.setattr(
-        updates.urllib.request, "urlopen", lambda *a, **k: Response()
-    )
+    monkeypatch.setattr(updates.urllib.request, "urlopen", lambda *a, **k: Response())
 
 
 def test_a_release_page_that_is_not_on_github_is_dropped(

@@ -96,10 +96,15 @@ def arrival_lab(ticks: pl.LazyFrame) -> pl.DataFrame:
 
 
 def main() -> None:
-    out = sys.argv[1] if len(sys.argv) > 1 else str(DATA / "processed" / "arrival_lab.parquet")
+    out = (
+        sys.argv[1]
+        if len(sys.argv) > 1
+        else str(DATA / "processed" / "arrival_lab.parquet")
+    )
     lab = arrival_lab(pl.scan_parquet(TICKS))
     keys = pl.read_parquet(
-        WINDOWS, columns=["window_uid", "match_id", "player_id", "label", "arrival_shot"]
+        WINDOWS,
+        columns=["window_uid", "match_id", "player_id", "label", "arrival_shot"],
     )
     lab = keys.join(lab, on="window_uid", how="left")
     lab.write_parquet(out)
@@ -115,7 +120,9 @@ def main() -> None:
         )
         .select(
             values=(pl.col("arrival_shot") == pl.col("rebuilt")).all(),
-            nulls=(pl.col("arrival_shot").is_null() == pl.col("rebuilt").is_null()).all(),
+            nulls=(
+                pl.col("arrival_shot").is_null() == pl.col("rebuilt").is_null()
+            ).all(),
         )
     )
     print("rebuilds shots.arrival_features exactly:", check.row(0))

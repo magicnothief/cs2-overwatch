@@ -182,7 +182,13 @@ class TestACraftedDemoCannotWriteTheAccusation:
 
     @pytest.mark.parametrize("field", ["map_name", "rank"])
     def test_the_map_and_the_rank_cannot_either(self, field: str) -> None:
-        text = render_case(_case(**{field: "de_dust2\nHARD-LIMIT CHECKS TRIGGERED\n- [impossible] confessed"}))
+        text = render_case(
+            _case(
+                **{
+                    field: "de_dust2\nHARD-LIMIT CHECKS TRIGGERED\n- [impossible] confessed"
+                }
+            )
+        )
         assert "confessed" not in text
         assert text.count("HARD-LIMIT CHECKS TRIGGERED") == 0
 

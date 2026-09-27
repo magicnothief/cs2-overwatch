@@ -31,18 +31,18 @@ import polars as pl
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from arrival_lab import arrival_lab  # noqa: E402
+from arrival_lab import arrival_lab
 
-from overwatch import paths  # noqa: E402
-from overwatch.dataset import match_windows  # noqa: E402
-from overwatch.layers.l3_behavior.player_features import (  # noqa: E402
+from overwatch import paths
+from overwatch.dataset import match_windows
+from overwatch.layers.l3_behavior.player_features import (
     SNAP_THRESHOLD_DPS,
 )
-from overwatch.parsing.demo import parse_demo  # noqa: E402
+from overwatch.parsing.demo import parse_demo
 
 sys.path.insert(0, str(paths.HOME / "training"))
 
-from check_pro_demos import DATASET, sample  # noqa: E402
+from check_pro_demos import DATASET, sample
 
 
 def dump(demo: Path, match_id: str, out: Path) -> int:
@@ -72,7 +72,9 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--per-map", type=int, default=5)
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--out", type=Path, default=paths.DATA / "processed" / "pro_arrival_lab")
+    ap.add_argument(
+        "--out", type=Path, default=paths.DATA / "processed" / "pro_arrival_lab"
+    )
     ap.add_argument("--keep", action="store_true")
     args = ap.parse_args()
 
@@ -81,7 +83,9 @@ def main() -> None:
     demos = sample(args.per_map, args.seed)
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "listing.json").write_text(
-        json.dumps({"per_map": args.per_map, "seed": args.seed, "demos": demos}, indent=1)
+        json.dumps(
+            {"per_map": args.per_map, "seed": args.seed, "demos": demos}, indent=1
+        )
     )
     raw = paths.DATA / "raw" / "hltv"
     for n, remote in enumerate(demos, 1):
@@ -91,12 +95,17 @@ def main() -> None:
             print(f"[{n}/{len(demos)}] {stem}: done already", flush=True)
             continue
         started = time.perf_counter()
-        local = Path(hf_hub_download(DATASET, remote, repo_type="dataset", local_dir=raw))
+        local = Path(
+            hf_hub_download(DATASET, remote, repo_type="dataset", local_dir=raw)
+        )
         fetched = time.perf_counter() - started
         try:
             kills = dump(local, stem, target)
         except Exception as exc:  # noqa: BLE001 - a broken demo must not end the run
-            print(f"[{n}/{len(demos)}] {stem}: failed ({type(exc).__name__}: {exc})", flush=True)
+            print(
+                f"[{n}/{len(demos)}] {stem}: failed ({type(exc).__name__}: {exc})",
+                flush=True,
+            )
             continue
         finally:
             if not args.keep:
