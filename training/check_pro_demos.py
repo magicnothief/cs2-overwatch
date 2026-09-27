@@ -60,6 +60,12 @@ NAME = re.compile(r"-m\d-(?:de_)?([a-z0-9]+)\.dem$")
 MAPS = ("ancient", "anubis", "dust2", "inferno", "mirage", "nuke", "overpass")
 
 
+def judged(player: dict) -> dict:
+    """The judge's own verdict for a stored player: what it said before the guard
+    (l4_judge/guard.py) held it, when it did; the gate is about the model."""
+    return player.get("judge_said") or player.get("verdict") or {}
+
+
 def sample(per_map: int, seed: int) -> list[str]:
     from huggingface_hub import HfApi
 
@@ -125,8 +131,12 @@ def run(
                 local.unlink(missing_ok=True)
         report_path.parent.mkdir(parents=True, exist_ok=True)
         report_path.write_text(report.model_dump_json())
+        # the judge's own verdict: the guard (l4_judge/guard.py) may have held it
         accused = [
-            p for p in report.players if p.verdict and p.verdict.verdict == "cheating"
+            p
+            for p in report.players
+            if (p.judge_said or p.verdict)
+            and (p.judge_said or p.verdict).verdict == "cheating"
         ]
         print(
             f"[{n}/{len(demos)}] {report.map_name} {Path(remote).stem}: "
@@ -218,9 +228,8 @@ def summarise(out: Path) -> None:
         any(e["severity"] in ("strong", "impossible") for e in p["rule_findings"])
         for _, p in players
     )
-    verdicts = Counter(
-        (p.get("verdict") or {}).get("verdict", "none") for _, p in players
-    )
+    verdicts = Counter(judged(p).get("verdict", "none") for _, p in players)
+    held = sum(bool(p.get("judge_held")) for _, p in players)
     print(
         f"\n{len(reports)} pro matches, {n} players with enough kills to score\n"
         f"flagged (any reason):        {share(flagged)}\n"
@@ -229,7 +238,9 @@ def summarise(out: Path) -> None:
         f"judge: cheating {share(verdicts['cheating'])}   (CS2CD clean: 1.9%)\n"
         f"       unclear  {share(verdicts['unclear'])}\n"
         f"       clean    {share(verdicts['clean'])}\n"
-        f"       no answer {verdicts['none']}"
+        f"       no answer {verdicts['none']}\n"
+        f"       (the judge's own verdicts; the guard held {held} of its cheating"
+        " verdicts at unclear on the page)"
     )
     report_lines(players)
     per_map = defaultdict(lambda: [0, 0, 0])
@@ -237,7 +248,7 @@ def summarise(out: Path) -> None:
         row = per_map[r["map_name"]]
         row[0] += 1
         row[1] += p["flagged"]
-        row[2] += (p.get("verdict") or {}).get("verdict") == "cheating"
+        row[2] += judged(p).get("verdict") == "cheating"
     print("\nper map (players, flagged, accused):")
     for name, (count, flag, acc) in sorted(per_map.items()):
         print(f"  {name:12s} {count:4d} {flag:4d} {acc:4d}")
@@ -246,17 +257,14 @@ def summarise(out: Path) -> None:
         "\npros' place among clean CS2CD players (median, p90): "
         f"{percentiles[n // 2]:.2f}, {percentiles[int(n * 0.9)]:.2f}"
     )
-    accused = [
-        (r, p)
-        for r, p in players
-        if (p.get("verdict") or {}).get("verdict") == "cheating"
-    ]
+    accused = [(r, p) for r, p in players if judged(p).get("verdict") == "cheating"]
     for r, p in accused:
         print(
             f"\naccused: {r['demo']} ({r['map_name']}), score {p['score']:.2f}, "
-            f"top {1 - (p['clean_percentile'] or 0):.0%}, {p['verdict']['probability']}%"
+            f"top {1 - (p['clean_percentile'] or 0):.0%}, {judged(p)['probability']}%"
+            + (" (held at unclear by the guard)" if p.get("judge_held") else "")
         )
-        for reason in p["verdict"]["reasons"]:
+        for reason in judged(p)["reasons"]:
             print(f"  - {reason}")
 
 
