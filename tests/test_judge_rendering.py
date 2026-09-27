@@ -405,3 +405,26 @@ class TestAJudgeStillReadsAMeasurementRetiredAfterIt:
             assert not shown & earlier, (
                 f"v{generation} would read {sorted(shown & earlier)}"
             )
+
+
+#: sha256 of the system prompt judge v4 was fine-tuned on
+V4_PROMPT_SHA = "e7fb45e6e653c460"
+
+
+def test_judge_6_is_told_the_corroboration_rule_and_v4_keeps_its_prompt() -> None:
+    import hashlib
+
+    from overwatch.layers.l4_judge.rendering import (
+        CORROBORATION_RULE,
+        SYSTEM_PROMPT,
+        system_prompt,
+    )
+
+    # the prompt v4 was fine-tuned on, byte for byte
+    assert system_prompt(4) == SYSTEM_PROMPT
+    assert (
+        hashlib.sha256(system_prompt(4).encode()).hexdigest().startswith(V4_PROMPT_SHA)
+    )
+    six = system_prompt(6)
+    assert CORROBORATION_RULE in six
+    assert six.replace(CORROBORATION_RULE + "\n", "") == SYSTEM_PROMPT

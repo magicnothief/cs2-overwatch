@@ -19,7 +19,7 @@ from pathlib import Path
 
 from overwatch import models, paths
 from overwatch.layers.l4_judge import server
-from overwatch.layers.l4_judge.rendering import SYSTEM_PROMPT, PlayerCase, render_case
+from overwatch.layers.l4_judge.rendering import PlayerCase, render_case, system_prompt
 from overwatch.layers.l4_judge.verdict import VERDICT_SCHEMA, Verdict
 
 #: The judge in use: fine-tune v4 (evidence-only targets, clean-player lines shown
@@ -132,7 +132,9 @@ class Judge:
         response = self.engine.post(
             "/completion",
             {
-                "prompt": server.render_prompt(SYSTEM_PROMPT, evidence),
+                "prompt": server.render_prompt(
+                    system_prompt(self.generation), evidence
+                ),
                 # the grammar makes invalid JSON impossible rather than unlikely
                 "json_schema": VERDICT_SCHEMA,
                 "temperature": 0.0,

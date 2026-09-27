@@ -6,6 +6,7 @@ from overwatch.layers.l4_judge.rendering import (
     MomentSummary,
     PlayerCase,
     render_case,
+    system_prompt,
 )
 from overwatch.layers.l4_judge.verdict import (
     VERDICT_SCHEMA,
@@ -25,4 +26,5 @@ __all__ = [
     "Verdict",
     "VerdictLabel",
     "render_case",
+    "system_prompt",
 ]

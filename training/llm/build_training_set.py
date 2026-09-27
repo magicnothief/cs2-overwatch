@@ -20,7 +20,7 @@ from pathlib import Path
 import polars as pl
 
 from overwatch.annotation import AnnotationStore, case_key, evidence_hash
-from overwatch.layers.l4_judge import SYSTEM_PROMPT, PlayerCase, render_case
+from overwatch.layers.l4_judge import PlayerCase, render_case, system_prompt
 from overwatch.layers.l4_judge.rendering import LATEST_JUDGE
 from overwatch.layers.l4_judge.targets import (
     build_target,
@@ -70,7 +70,7 @@ def main() -> None:
 
         record = {
             "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt(LATEST_JUDGE)},
                 {"role": "user", "content": evidence},
                 {"role": "assistant", "content": target.model_dump_json()},
             ],

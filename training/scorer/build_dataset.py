@@ -2,8 +2,15 @@
 
 Run:  uv run python training/scorer/build_dataset.py
       uv run python training/scorer/build_dataset.py --limit 50   # quick pass
+      uv run python training/scorer/build_dataset.py --features-only
 
 Writes data/processed/{windows,window_ticks,window_features}.parquet.
+
+--features-only recomputes window_features.parquet from the stored
+window_ticks.parquet: for a change to how a window is measured (the arrival
+redesign, say), not to how windows are cut. It needs a fraction of the memory:
+the full build holds every match's windows at once, which on a 46 GB machine ran
+out around match 500 of 795.
 """
 
 from __future__ import annotations
@@ -26,6 +33,11 @@ def main() -> None:
     parser.add_argument("--root", type=Path, default=ROOT / "data" / "raw" / "cs2cd")
     parser.add_argument("--out", type=Path, default=ROOT / "data" / "processed")
     parser.add_argument("--limit", type=int, default=None, help="use only N matches")
+    parser.add_argument(
+        "--features-only",
+        action="store_true",
+        help="recompute window_features from the stored window_ticks",
+    )
     parser.add_argument("--pre", type=int, default=128, help="ticks before each kill")
     parser.add_argument("--post", type=int, default=32, help="ticks after each kill")
     parser.add_argument(
@@ -37,6 +49,17 @@ def main() -> None:
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.WARNING, format="%(message)s")
+
+    if args.features_only:
+        started = time.time()
+        window_ticks = pl.read_parquet(args.out / "window_ticks.parquet")
+        features = build_window_features(window_ticks)
+        features.write_parquet(args.out / "window_features.parquet")
+        print(
+            f"window_features for {features.height} windows from "
+            f"{window_ticks.height} stored window ticks in {time.time() - started:.0f}s"
+        )
+        return
 
     paths = cs2cd_matches(args.root)
     if args.limit:

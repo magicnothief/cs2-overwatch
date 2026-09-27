@@ -430,3 +430,23 @@ Use the full range: 5 for a clearly clean player, 50 when the evidence is genuin
 mixed, 95 when several independent measurements all point the same way. Do not \
 simply repeat the behaviour model score — it is one piece of evidence among several, \
 and it can be wrong."""
+
+#: What judge 6 is told, in words, that its targets teach by example
+#: (targets.corroborated). Earlier judges keep the prompt they were trained on,
+#: byte for byte: a sentence they never saw is as foreign as a measurement.
+CORROBORATION_RULE = (
+    "- One measurement past its clean line is a reason for doubt, never for "
+    '"cheating" on its own: 1 clean player in 100 is past a 99% line by '
+    'construction. "cheating" needs two measurements past their lines, one of '
+    "them past the 99% line, or a hard-limit check that fired."
+)
+#: The first judge whose prompt carries CORROBORATION_RULE.
+CORROBORATION_SINCE_JUDGE = 6
+
+
+def system_prompt(judge: int) -> str:
+    """The instructions one generation of judge was trained with."""
+    if judge < CORROBORATION_SINCE_JUDGE:
+        return SYSTEM_PROMPT
+    rule = "- A single unusual kill is weak evidence. A pattern across many kills is strong.\n"
+    return SYSTEM_PROMPT.replace(rule, rule + CORROBORATION_RULE + "\n")
