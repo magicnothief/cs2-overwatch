@@ -268,6 +268,7 @@ button.small { font-size: var(--s-1); padding: 0.3em 0.8em; }
 .timeline-scroll { overflow-x: auto; margin: 0 calc(-1 * var(--gutter)); padding: 0 var(--gutter) 0.5rem; }
 .timeline {
   display: grid;
+  position: relative; /* the replay's playhead is placed in a round's column */
   /* name | rounds ... | score; filled in by app.js */
   min-width: 720px;
   font-stretch: 87%;
@@ -372,6 +373,63 @@ button.small { font-size: var(--s-1); padding: 0.3em 0.8em; }
 .radar svg { width: 100%; aspect-ratio: 1; display: block; background: #d6dde4; border-radius: 3px; touch-action: none; }
 .radar svg text { font-family: Archivo, system-ui, sans-serif; font-stretch: 87%; font-weight: 600; }
 .radar input[type="range"] { width: 100%; margin: 0.6rem 0 0.2rem; accent-color: var(--graphite); }
+
+/* ---------- a round, replayed ---------- */
+
+.round { margin: var(--space-6) 0 var(--space-7); padding-top: var(--space-5); border-top: 1px solid var(--grid); outline: none; }
+.round-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3) var(--space-5); }
+.round-head h2 { margin: 0; }
+.round-head .controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.round-head .clock { font-size: var(--s-1); color: var(--muted); min-width: 7.5em; }
+.round-head .goto { margin: 0; }
+.round-head .goto code { font-size: var(--s-1); }
+.round-head .close { margin-left: auto; }
+.speeds { display: flex; }
+.speeds button { font-size: var(--s-1); padding: 0.3em 0.7em; color: var(--graphite); background: var(--paper); box-shadow: inset 0 0 0 1.5px var(--graphite); border-radius: 0; }
+.speeds button + button { margin-left: -1.5px; }
+.speeds button:first-child { border-radius: 3px 0 0 3px; }
+.speeds button:last-child { border-radius: 0 3px 3px 0; }
+.speeds button[aria-pressed="true"] { color: var(--paper); background: var(--graphite); }
+.round-body { display: grid; grid-template-columns: minmax(0, 34rem) minmax(0, 1fr); gap: var(--space-6); margin-top: var(--space-5); align-items: start; }
+.round-radar figcaption { font-size: var(--s-1); color: var(--muted); margin-top: var(--space-2); max-width: 60ch; }
+.round-lanes { --name: 9rem; position: relative; padding: var(--space-2) 0; outline: none; touch-action: none; cursor: col-resize; user-select: none; }
+.round-lanes:focus-visible { box-shadow: 0 0 0 2px var(--graphite); border-radius: 3px; }
+.rlane { display: grid; grid-template-columns: var(--name) minmax(0, 1fr); align-items: stretch; height: 2rem; }
+.rlane.followed { background: var(--tint); }
+.rgap { height: var(--space-3); }
+.rname {
+  font: inherit; font-stretch: 87%; font-weight: 600; font-size: var(--s0); color: var(--graphite);
+  background: none; border-radius: 0; padding: 0 var(--space-2) 0 0; cursor: pointer;
+  display: flex; align-items: center; gap: var(--space-2); text-align: left;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rname::before { content: ""; flex: none; width: 4px; align-self: stretch; margin: var(--space-1) 0; background: var(--side, var(--grid)); }
+.rname[aria-pressed="true"] { font-weight: 700; }
+.rtrack { position: relative; border-left: 1px solid var(--grid); }
+.rtrack > span { position: absolute; top: 50%; }
+.rtrack .alive { left: 0; height: 2px; margin-top: -1px; background: var(--graphite); opacity: 0.35; }
+.rtrack .blind { height: 50%; transform: translateY(-50%); background: repeating-linear-gradient(45deg, transparent 0 3px, var(--muted) 3px 4px); opacity: 0.5; }
+.rtrack .shot { width: 1px; height: 40%; transform: translateY(-50%); background: var(--graphite); opacity: 0.55; }
+.rtrack .rkill { width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; border: 2px solid var(--graphite); border-radius: 50%; background: var(--paper); }
+.rtrack .rkill.headshot { background: var(--graphite); }
+.rtrack .rdeath { width: 12px; height: 12px; margin: -6px 0 0 -6px; }
+.rtrack .rdeath::before, .rtrack .rdeath::after { content: ""; position: absolute; left: 5px; top: 0; width: 2px; height: 12px; background: var(--graphite); transform: rotate(45deg); }
+.rtrack .rdeath::after { transform: rotate(-45deg); }
+.raxis-row { height: 1.4rem; }
+.raxis { position: relative; border-left: 1px solid var(--grid); }
+.raxis span { position: absolute; top: var(--space-1); transform: translateX(-50%); font-size: var(--s-1); color: var(--muted); }
+.raxis span:first-child { transform: none; }
+.rplayhead { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; left: calc(var(--name) + var(--at, 0) * (100% - var(--name))); background: var(--graphite); pointer-events: none; }
+/* absolute, so the grid gives it the round's column without placing cells around it */
+.timeline .tl-playhead { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
+.timeline .tl-playhead::after { content: ""; position: absolute; top: 0; bottom: 0; left: var(--at, 0); width: 2px; margin-left: -1px; background: var(--graphite); }
+.timeline .round-open { font: inherit; color: inherit; background: none; padding: 0.05em 0.35em; border-radius: 3px; }
+.timeline .round-open:hover, .timeline .head.open .round-open { color: var(--graphite); box-shadow: inset 0 0 0 1.5px var(--graphite); }
+.moment-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-3) var(--space-5); }
+@media (max-width: 800px) {
+  .round-body { grid-template-columns: 1fr; }
+  .round-lanes { --name: 7rem; }
+}
 .radar figcaption { font-size: var(--s-1); color: var(--muted); }
 .trace { width: 100%; height: auto; display: block; margin: 0 0 0.75rem; }
 .trace .cursor { stroke: var(--graphite); stroke-width: 1; opacity: 0.5; }

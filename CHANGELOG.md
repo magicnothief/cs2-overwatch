@@ -2,6 +2,23 @@
 
 Each version's section becomes its release notes on GitHub. Newest first.
 
+## Unreleased
+
+**Round replay**
+- Any round can be replayed on the radar: everyone moving and where they look,
+  shots, deaths, smokes, fires, the bomb and who is flashed. Open it from a
+  round's number in the timeline, or from "Replay this round" on a kill, which
+  starts 5 s before it and follows the attacker.
+- Follow a player to see the round as they could know it: enemies they had in
+  sight, enemies only a teammate saw, and enemies nobody on their team could
+  see, from the same line of sight on the map as the evidence.
+- A lane per player along the round's time, with its kills, death, shots and
+  blind spells; a playhead runs through the lanes and the timeline. Space plays,
+  the arrows jump between kills, and the address keeps the round and the player.
+- Reports analysed before this version have no replay; analyse the demo again to
+  add one. A replay takes about 0.1 s of analysis and 0.1 to 1 MB beside the
+  report.
+
 ## 0.4.0 (2026-09-27)
 
 **The report**

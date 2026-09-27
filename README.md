@@ -79,7 +79,9 @@ Layer 1 finding, or a score above 90% of clean players.
 
 Or in the browser: `overwatch` (in this checkout: `uv run overwatch`), then drop
 a demo on the page. Every report is laid out on a round timeline, one lane per
-player, with each kill's crosshair trace one click away.
+player, with each kill's crosshair trace one click away. Any round can be replayed
+on the radar, as a whole or as one player could know it: who they had in sight,
+who only a teammate saw, and who nobody on their team could see.
 
 ## What a report is not
 

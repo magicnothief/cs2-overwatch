@@ -246,3 +246,46 @@ choices, brought in as a component rather than the page's frame.
   Mesh-drawn maps take the same test on their reachable floors, cell by cell:
   Arms Race Baggage (the carousel hall over its tunnels) and Pool Day (two copies
   of the arena, 8192 units apart) split; the rest stay one image.
+
+## Round replay (added 2026-09-27)
+
+Asked for as "round replay" among the brainstormed features, for both jobs at
+once: the whole round, and one player's view of what they could know. Spec and
+its revision: `docs/specs/2026-09-27-round-replay.md`.
+
+- **Where it lives.** Between the timeline and the evidence, only while a round
+  is open, so the page keeps its order (answer, timeline, moments, proof). It
+  opens from a round's number in the timeline, or from "Replay this round" on a
+  moment, which starts 5 s before the kill and follows the attacker. The address
+  carries the round (`r`) and the followed player (`f`); the moment (`t`) is
+  written with `replaceState` on pause, never while playing, because a hash
+  change rebuilds the report.
+- **The radar is the kill radar's drawing** (`radarKit`, shared, the kill radar
+  unchanged to the pixel): pointers, cones, names, hollow for another floor. It
+  frames the part of the map the whole match used, the same in every round, so
+  the view never zooms as players spread; a small map's radar image is mostly
+  margin. Smokes are pale discs, fires hatched ones, the bomb a small graphite
+  square (ringed when planted), a shot a graphite tracer gone in 150 ms. No new
+  colour: team colours are players, graphite is everything else.
+- **Following a player** draws each enemy as that player could know them: solid
+  if they see them, an outline if only a teammate does, a ghost if nobody on the
+  team does. "Sees" is the evidence's own mesh line of sight plus the field of
+  view, not the game's `spotted` flag, which misses a third of real sightings
+  (`docs/evals/2026-09-27-replay-marks-gate.md`). The key under the radar says it
+  in words, including that walls count and smokes and sound do not.
+- **No magenta here.** The planned "look here" marks (a crosshair staying on an
+  unseen enemy) fired for 78% of clean CS2CD players and were cut. Magenta keeps
+  meaning what the rest of the page says it means.
+- **The lanes speak the timeline's language**: one per player, grouped by side,
+  a ring per kill (filled for a headshot), a cross where they died, a tick per
+  shot, hatching while blind, a time axis every 30 s. The playhead crosses the
+  lanes and the round's column in the timeline above, so "where in the match"
+  and "where in the round" are one line.
+- **Motion.** Playback is the page's second piece of motion, and like the kill
+  trace it only ever answers the reader: nothing moves until Play.
+- **Keyboard.** Inside the round, Space plays and pauses, the arrows jump to 2 s
+  before the previous or next kill, Esc closes; the lanes are a slider for
+  assistive tech. Outside it the page's keys are unchanged.
+- **Checked against the defaults:** words, not icons, for Play and the speeds;
+  the speed switch is the floor switch's segmented control; no card, no shadow,
+  a rule above the section and space around it.

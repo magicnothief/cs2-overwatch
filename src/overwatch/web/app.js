@@ -46,7 +46,7 @@ const weapon = (id) => (id ? WEAPONS[id] || (id.startsWith("knife") || id.starts
 function copyButton(text) {
   const button = el("button", { type: "button", class: "quiet" }, "Copy");
   button.addEventListener("click", async () => {
-    try { await navigator.clipboard.writeText(text); button.textContent = "Copied"; }
+    try { await navigator.clipboard.writeText(typeof text === "function" ? text() : text); button.textContent = "Copied"; }
     catch { button.textContent = "Select and copy it"; }
     setTimeout(() => (button.textContent = "Copy"), 1600);
   });
@@ -362,8 +362,28 @@ async function report(id, params) {
   const detail = el("section", { class: "detail", id: "the-moment", tabindex: "-1" },
     el("div", {},
       player ? moments(player, kill) : null,
-      kill ? killDetail(kill, radar, data.map_name, player.name || player.player_id) : el("p", { class: "muted" }, "This player has no kills to show.")),
+      kill ? killDetail(kill, radar, data.map_name, player.name || player.player_id,
+        // opens 5 s before the kill, seen as the attacker knew it
+        data.replay && kill.round ? () => go({ r: kill.round, f: player.player_id, t: kill.tick - 320 }) : null)
+        : el("p", { class: "muted" }, "This player has no kills to show.")),
     player ? playerPanel(player, data) : null);
+  // a round stays open, and keeps playing, while the reader picks players and kills
+  const r = Number(params.get("r")) || null;
+  let round = null;
+  if (r && data.replay) {
+    if (openRound && openRound.id === id && openRound.number === r) {
+      round = openRound;
+      round.follow(params.get("f"));
+    } else {
+      openRound?.stop();
+      const replay = await replayFor(id);
+      round = openRound = roundView(id, data, replay, r, radar,
+        { follow: params.get("f"), at: Number(params.get("t")) || null });
+    }
+  } else if (openRound) {
+    openRound.stop();
+    openRound = null;
+  }
   // choosing another kill in the same report keeps the timeline as it is: rebuilt,
   // every ring would be laid out again and the lanes' sideways scroll would reset
   const kept = !fresh && view.querySelector(".timeline");
@@ -374,9 +394,18 @@ async function report(id, params) {
     markSelection(kept, player, kill);
     view.querySelector(".detail").replaceWith(detail);
     if (wasInMoments) detail.querySelector(".moments li.here button")?.focus();
+    const shown = view.querySelector(".round");
+    if (round && shown !== round.node) {
+      shown?.remove();
+      detail.before(round.node);
+      round.attach(kept);
+      round.node.scrollIntoView({ block: "start" });
+      round.node.focus({ preventScroll: true });
+    } else if (!round) shown?.remove();
   } else {
-    view.replaceChildren(matchHeader(data), timeline(data, players, player, kill, fresh), detail);
+    view.replaceChildren(matchHeader(data), timeline(data, players, player, kill, fresh), ...(round ? [round.node] : []), detail);
     dodgeKills();
+    round?.attach(view.querySelector(".timeline"));
   }
   keyboard = (e) => navigate(e, id, players, player, kill);
 }
@@ -539,7 +568,11 @@ function timeline(data, players, selected, kill, animate) {
   });
 
   grid.append(el("div", { class: "head name" }, "Player"));
-  rounds.forEach((r) => grid.append(el("div", { class: "head" + (switches.has(r.number - 1) ? " switch" : "") }, r.number)));
+  rounds.forEach((r) => grid.append(el("div", { class: "head" + (switches.has(r.number - 1) ? " switch" : "") },
+    data.replay
+      ? el("button", { type: "button", class: "round-open", "aria-label": `Replay round ${r.number}`,
+          title: `Replay round ${r.number}`, onclick: () => go({ r: r.number, f: null, t: null }) }, r.number)
+      : r.number)));
   grid.append(el("div", { class: "head score" }, "Behaviour score"));
 
   let lastSide = null;
@@ -642,10 +675,11 @@ function timeline(data, players, selected, kill, animate) {
       " marks flagged players and the kills to watch first. The bar by each name is the side they started on: ",
       el("span", { style: "color:var(--ct-ink);font-weight:600" }, "CT"), " or ",
       el("span", { style: "color:var(--t-ink);font-weight:600" }, "T"), ".", switchText,
-      ` The bar beside each score is how far that player sits above clean players, and the mark on it is the line at ${pct(data.flag_percentile ?? 0.9)}, where flagging starts.`));
+      ` The bar beside each score is how far that player sits above clean players, and the mark on it is the line at ${pct(data.flag_percentile ?? 0.9)}, where flagging starts.`,
+      data.replay ? " Choose a round's number to replay it." : " Round replays need the demo analysed again with 0.5.0 or later."));
 }
 
-function killDetail(k, radarMeta, mapName, shooter) {
+function killDetail(k, radarMeta, mapName, shooter, replayRound = null) {
   // The measurements that could carry an accusation read first and read louder;
   // the setting is true and useful, but it is not what the claim rests on.
   const measured = [];
@@ -680,7 +714,9 @@ function killDetail(k, radarMeta, mapName, shooter) {
   show(shot);
 
   return el("div", {},
-    el("h2", {}, `Round ${k.round ?? "?"}: ${what || "kill"}${k.victim ? ` on ${k.victim}` : ""}`),
+    el("div", { class: "moment-head" },
+      el("h2", {}, `Round ${k.round ?? "?"}: ${what || "kill"}${k.victim ? ` on ${k.victim}` : ""}`),
+      replayRound ? el("button", { type: "button", class: "quiet small", onclick: replayRound }, "Replay this round") : null),
     el("div", { class: "visuals" },
       map.figure,
       el("div", {},
@@ -936,6 +972,396 @@ function radarView(k, meta, mapName, shooter) {
   return { figure, slider, show };
 }
 
+/**
+ * A round, replayed: everyone on the radar, one lane each along the round's
+ * time, and a playhead through the lanes and through the round's column in the
+ * timeline. Following a player draws each enemy as that player could know them
+ * (pipeline/replay.py: a clear line on the map mesh and on their screen): seen
+ * by them, seen only by a teammate, or by nobody on their team.
+ * Spec: docs/specs/2026-09-27-round-replay.md.
+ */
+const replayCache = new Map();
+let openRound = null;
+
+function replayFor(id) {
+  if (!replayCache.has(id)) {
+    replayCache.set(id, api(`/api/reports/${id}/replay`).catch((e) => ({ error: e.message })));
+  }
+  return replayCache.get(id);
+}
+
+const clock = (seconds) => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
+// a bitmask over the match's players, past JavaScript's 32-bit bitwise operators
+const hasBit = (mask, i) => mask != null && Math.floor(mask / 2 ** i) % 2 === 1;
+
+function roundView(id, data, replay, number, meta, { follow = null, at = null } = {}) {
+  const rnd = replay?.rounds?.find((r) => r.number === number);
+  const node = el("section", { class: "round", "aria-labelledby": "round-title", tabindex: "-1" });
+  const close = el("button", { type: "button", class: "quiet small close" }, "Close");
+  close.addEventListener("click", () => go({ r: null, f: null, t: null }));
+  if (!rnd || replay.version !== 1) {
+    node.append(el("header", { class: "round-head" }, el("h2", { id: "round-title" }, `Round ${number}`), close),
+      el("p", { class: "muted" }, replay?.error ? `The replay could not be loaded: ${replay.error}` : "This round is not in the replay."));
+    return { id, number, node, follow: () => {}, stop: () => {}, attach: () => {} };
+  }
+
+  const tickRate = replay.tick_rate || 64;
+  const step = replay.sample_ticks || 4;
+  const n = rnd.players.length ? rnd.players[0].x.length : 0;
+  const start = rnd.start, end = rnd.end;
+  const people = replay.players;
+  const nameOf = (i) => people[i]?.name || people[i]?.id || "?";
+  const byIndex = new Map(rnd.players.map((p) => [p.i, p]));
+  let followed = null;
+  let t = Math.min(Math.max(at ?? rnd.t0, rnd.t0), end - 1);
+  let playing = false, speed = 1, raf = 0, last = 0;
+
+  // ---- the radar ----
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", `Round ${number} seen from above`);
+  const levels = meta?.levels;
+  const floorOf = (z) => (levels && z != null ? (z >= levels.split_z ? "upper" : "lower") : null);
+  let floor = "upper", floorChosen = false;
+  const floorButtons = levels ? ["upper", "lower"].map((f) => el("button", { type: "button", "data-floor": f }, f === "upper" ? "Upper" : "Lower")) : [];
+  const toggle = levels ? el("div", { class: "floors", role: "group", "aria-label": "Floor" }, floorButtons) : null;
+  const key = el("figcaption", {});
+  const figure = el("figure", { class: "radar round-radar" }, svg, toggle, key);
+
+  // the part of the map this match used, the same for every round: a small map's
+  // radar image is mostly margin, and a round should not zoom as players spread
+  if (!replay.box) {
+    const upp0 = meta ? meta.units_per_pixel : 1;
+    const toX = (x) => (meta ? (x - meta.x_min) / upp0 : x);
+    const toY = (y) => (meta ? (meta.y_max - y) / upp0 : -y);
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const r of replay.rounds) {
+      for (const p of r.players) {
+        p.x.forEach((x, j) => {
+          if (x == null) return;
+          const px = toX(x), py = toY(p.y[j]);
+          x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py);
+        });
+      }
+    }
+    const side = Math.max(x1 - x0, y1 - y0, 1600 / upp0) * 1.15; // at least ~40 m across
+    replay.box = x0 === Infinity ? [0, 0, meta?.size || 1000, meta?.size || 1000]
+      : [(x0 + x1) / 2 - side / 2, (y0 + y1) / 2 - side / 2, side, side];
+  }
+  const box = replay.box;
+  svg.setAttribute("viewBox", box.join(" "));
+  const u = box[2] / 520; // one screen pixel, roughly, at the usual width
+  const kit = radarKit(svg, meta, u);
+  const { X, Y, upp, add, colour } = kit;
+  const image = meta ? add("image", { x: 0, y: 0, width: meta.size, height: meta.size }) : null;
+  const layer = (name) => add("g", { class: name });
+  const areas = layer("areas"), cones = layer("cones"), lines = layer("lines"), marks = layer("marks"), names = layer("names");
+
+  // smokes and fires: a pale disc, a hatched one
+  const hatch = kit.node("pattern", { id: `${kit.radarId}-fire`, width: 6 * u, height: 6 * u,
+    patternUnits: "userSpaceOnUse", patternTransform: "rotate(45)" }, kit.defs);
+  kit.node("line", { x1: 0, y1: 0, x2: 0, y2: 6 * u, stroke: "var(--graphite)", "stroke-width": 1.5 * u, opacity: 0.35 }, hatch);
+  const discs = [
+    ...rnd.smokes.map(([from, until, x, y]) => ({ from, until, shape: kit.node("circle", { cx: X(x), cy: Y(y),
+      r: (replay.smoke_radius || 144) / upp, fill: "var(--paper)", "fill-opacity": 0.8, stroke: "var(--grid)",
+      "stroke-width": 1.5, "vector-effect": "non-scaling-stroke" }, areas) })),
+    ...rnd.fires.map(([from, until, x, y]) => ({ from, until, shape: kit.node("circle", { cx: X(x), cy: Y(y),
+      r: (replay.fire_radius || 120) / upp, fill: `url(#${hatch.id})`, stroke: "var(--graphite)",
+      "stroke-opacity": 0.5, "stroke-dasharray": "4 3", "stroke-width": 1.25, "vector-effect": "non-scaling-stroke" }, areas) })),
+  ];
+
+  // everyone: a cone, a pointer, a name, and a ring where they fell
+  const deathOf = new Map(rnd.deaths.map((d) => [d[1], d]));
+  const marker = new Map();
+  for (const p of rnd.players) {
+    const cone = kit.cone(`p${p.i}`, p.side, 0.22);
+    cones.append(cone.shape);
+    const ring = kit.node("circle", { r: 4.5 * u, fill: "var(--paper)", stroke: colour(p.side), "stroke-width": 1.5,
+      "vector-effect": "non-scaling-stroke", opacity: 0.55, visibility: "hidden" }, marks);
+    const pointer = kit.pointer(p.side, 5 * u, marks);
+    const tag = kit.tag(nameOf(p.i), p.side, 600, names);
+    marker.set(p.i, { cone, ring, pointer, tag });
+  }
+  const tracers = layer("tracers");
+  const bombMark = kit.node("rect", { width: 7 * u, height: 7 * u, fill: "var(--graphite)", stroke: "var(--paper)",
+    "stroke-width": 1, "vector-effect": "non-scaling-stroke", visibility: "hidden" }, marks);
+  const bombRing = kit.node("circle", { r: 10 * u, fill: "none", stroke: "var(--graphite)", "stroke-width": 1.5,
+    "vector-effect": "non-scaling-stroke", visibility: "hidden" }, marks);
+  if (meta) kit.scaleBar(box[0] + 14 * u, box[1] + box[3] - 14 * u);
+
+  // ---- the lanes ----
+  const frac = (tick) => Math.min(1, Math.max(0, (tick - start) / Math.max(1, end - start)));
+  const pctAt = (tick) => `${(100 * frac(tick)).toFixed(2)}%`;
+  const lanes = el("div", { class: "round-lanes", role: "slider", tabindex: "0",
+    "aria-label": `Time in round ${number}`, "aria-valuemin": 0, "aria-valuemax": Math.round((end - start) / tickRate) });
+  const followButtons = new Map();
+  const ordered = [...rnd.players].sort((a, b) => (a.side === b.side ? nameOf(a.i).localeCompare(nameOf(b.i)) : a.side === "CT" ? -1 : 1));
+  let lastSide = null;
+  for (const p of ordered) {
+    if (lastSide !== null && p.side !== lastSide) lanes.append(el("div", { class: "rgap", "aria-hidden": "true" }));
+    lastSide = p.side;
+    const died = deathOf.get(p.i);
+    const track = el("div", { class: "rtrack" },
+      el("span", { class: "alive", style: `width:${pctAt(died ? died[0] : end)}` }));
+    // blind stretches, from the samples
+    let from = null;
+    p.blind.forEach((b, i) => {
+      if (b === 1 && from === null) from = i;
+      if ((b !== 1 || i === p.blind.length - 1) && from !== null) {
+        const a = rnd.t0 + from * step, z = rnd.t0 + i * step;
+        track.append(el("span", { class: "blind", style: `left:${pctAt(a)};width:calc(${pctAt(z)} - ${pctAt(a)})` }));
+        from = null;
+      }
+    });
+    for (const [tick, who] of rnd.shots) if (who === p.i) track.append(el("span", { class: "shot", style: `left:${pctAt(tick)}` }));
+    for (const [tick, victim, killer, , headshot] of rnd.deaths) {
+      if (killer === p.i) {
+        track.append(el("span", { class: "rkill" + (headshot ? " headshot" : ""), style: `left:${pctAt(tick)}`,
+          title: `${nameOf(p.i)} killed ${nameOf(victim)}` }));
+      }
+    }
+    if (died) track.append(el("span", { class: "rdeath", style: `left:${pctAt(died[0])}`, title: `${nameOf(p.i)} died` }));
+    const name = el("button", { type: "button", class: "rname", "aria-pressed": "false",
+      style: `--side: var(--${p.side === "CT" ? "ct" : "t"})`, title: `See the round as ${nameOf(p.i)} knew it` }, nameOf(p.i));
+    name.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const pid = people[p.i]?.id;
+      go({ f: followed === p.i ? null : pid });
+    });
+    followButtons.set(p.i, name);
+    lanes.append(el("div", { class: "rlane", "data-i": p.i }, name, track));
+  }
+  // a time axis every 30 s, and what the marks mean
+  const axis = el("div", { class: "raxis", "aria-hidden": "true" });
+  for (let s = 0; s * tickRate <= end - start; s += 30) {
+    axis.append(el("span", { style: `left:${pctAt(start + s * tickRate)}` }, clock(s)));
+  }
+  lanes.append(el("div", { class: "rlane raxis-row" }, el("span", {}), axis));
+  const playhead = el("div", { class: "rplayhead", "aria-hidden": "true" });
+  lanes.append(playhead);
+  const lanesKey = el("p", { class: "legend" },
+    "A ring is a kill, filled for a headshot; a cross is where the player died. Ticks are shots, hatching is time spent blind. ",
+    "Drag along the lanes to move through the round.");
+
+  // ---- the header ----
+  const play = el("button", { type: "button", class: "quiet small play" }, "Play");
+  const speeds = [1, 2, 4].map((s) => el("button", { type: "button", "aria-pressed": String(s === 1) }, `${s}×`));
+  const clockText = el("span", { class: "clock" });
+  const code = el("code", {});
+  const copy = copyButton(() => code.textContent);
+  copy.classList.add("small");
+  node.append(
+    el("header", { class: "round-head" },
+      el("h2", { id: "round-title" }, `Round ${number}`),
+      el("div", { class: "controls" }, play, el("div", { class: "speeds", role: "group", "aria-label": "Speed" }, speeds), clockText),
+      el("div", { class: "goto" }, code, copy),
+      close),
+    el("div", { class: "round-body" }, figure, el("div", {}, lanes, lanesKey)));
+
+  // ---- one moment, drawn ----
+  let timelineHead = null;
+  const where = (p, i, w) => {
+    const x0 = p.x[i];
+    if (x0 == null) return null;
+    const j = Math.min(i + 1, n - 1), ok = p.x[j] != null && w > 0;
+    const lerp = (a, b) => (ok ? a + w * (b - a) : a);
+    const turn = ok ? ((p.yaw[j] - p.yaw[i] + 540) % 360) - 180 : 0;
+    return { x: lerp(x0, p.x[j]), y: lerp(p.y[i], p.y[j]), z: p.z[i], yaw: p.yaw[i] + w * turn };
+  };
+  const draw = () => {
+    const f = (t - rnd.t0) / step;
+    const i = Math.max(0, Math.min(n - 1, Math.floor(f))), w = Math.min(1, Math.max(0, f - i));
+    const k = Math.max(0, Math.min(n - 1, Math.round(f)));
+    const now = new Map(rnd.players.map((p) => [p.i, where(p, i, w)]));
+    const me = followed != null ? byIndex.get(followed) : null;
+    const meAt = me ? now.get(me.i) : null;
+    if (levels && !floorChosen && meAt) floor = floorOf(meAt.z) || floor;
+    if (image) image.setAttribute("href", `/radars/${levels ? levels[floor] : data.map_name}.png`);
+    for (const b of floorButtons) b.setAttribute("aria-pressed", String(b.dataset.floor === floor));
+    // who on the followed player's team sees whom, at this sample
+    const teamSees = (e) => rnd.players.some((m) => m.side === me.side && now.get(m.i) && hasBit(m.sees?.[k], e));
+    for (const p of rnd.players) {
+      const m = marker.get(p.i), here = now.get(p.i), died = deathOf.get(p.i);
+      const away = levels && here && floorOf(here.z) !== floor;
+      if (!here) {
+        for (const shape of [m.pointer.group, m.cone.shape]) shape.setAttribute("visibility", "hidden");
+        const fell = died && t >= died[0] && died[5] != null;
+        m.ring.setAttribute("visibility", fell ? "visible" : "hidden");
+        m.tag.setAttribute("visibility", fell ? "visible" : "hidden");
+        if (fell) {
+          m.ring.setAttribute("cx", X(died[5])); m.ring.setAttribute("cy", Y(died[6]));
+          kit.nameAt(m.tag, X(died[5]), Y(died[6]));
+          m.tag.setAttribute("opacity", 0.5);
+        }
+        continue;
+      }
+      m.ring.setAttribute("visibility", "hidden");
+      m.pointer.group.setAttribute("visibility", "visible");
+      m.tag.setAttribute("visibility", "visible");
+      const x = X(here.x), y = Y(here.y);
+      const blind = p.blind[k] === 1;
+      // following: an enemy is solid, an outline or a ghost by what the team saw
+      let state = "seen";
+      if (me && p.side !== me.side && replay.visibility) {
+        state = hasBit(me.sees?.[k], p.i) ? "seen" : teamSees(p.i) ? "radar" : "unknown";
+      }
+      kit.place(m.pointer, x, y, here.yaw);
+      kit.paint(m.pointer, p.side, state !== "seen" || away);
+      const faint = state === "unknown" ? 0.3 : away ? 0.6 : blind ? 0.5 : 1;
+      m.pointer.group.setAttribute("opacity", faint);
+      kit.nameAt(m.tag, x, y);
+      m.tag.setAttribute("opacity", state === "unknown" ? 0.45 : away ? 0.6 : 1);
+      m.tag.setAttribute("font-weight", p.i === followed ? 700 : 600);
+      const strong = p.i === followed;
+      kit.aim(m.cone, x, y, blind || state === "unknown" ? null : here.yaw, (strong ? 1100 : 600) / upp);
+      m.cone.beam.firstChild.setAttribute("style",
+        `stop-color:${colour(p.side)};stop-opacity:${strong ? 0.34 : state === "radar" ? 0.12 : 0.22}`);
+      m.cone.shape.setAttribute("opacity", away ? 0.4 : 1);
+    }
+    // the bomb, from its events up to now
+    let carrier = null, ground = null, planted = null, gone = false;
+    for (const [tick, what, who, bx, by] of rnd.bomb) {
+      if (tick > t) break;
+      if (what === "pickup") { carrier = who; ground = null; }
+      else if (what === "drop") { carrier = null; ground = [bx, by]; }
+      else if (what === "plant") { carrier = null; planted = [bx, by]; }
+      else gone = true;
+    }
+    const carried = carrier != null ? now.get(carrier) : null;
+    const spot = gone ? null : planted || ground || (carried ? [carried.x, carried.y] : null);
+    bombMark.setAttribute("visibility", spot ? "visible" : "hidden");
+    bombRing.setAttribute("visibility", spot && planted ? "visible" : "hidden");
+    if (spot) {
+      const bx = X(spot[0]) + (carried && !planted && !ground ? 6 * u : -3.5 * u), by = Y(spot[1]) + (carried && !planted && !ground ? 4 * u : -3.5 * u);
+      bombMark.setAttribute("x", bx); bombMark.setAttribute("y", by);
+      bombRing.setAttribute("cx", X(spot[0])); bombRing.setAttribute("cy", Y(spot[1]));
+    }
+    for (const d of discs) d.shape.setAttribute("visibility", t >= d.from && t < d.until ? "visible" : "hidden");
+    // shots: a short tracer along the shooter's view, gone in 150 ms
+    tracers.replaceChildren();
+    const fade = tickRate * 0.15;
+    for (const [tick, who] of rnd.shots) {
+      if (tick > t || t - tick > fade) continue;
+      const here = now.get(who);
+      if (!here) continue;
+      const a = (here.yaw * Math.PI) / 180, reach = 420 / upp;
+      kit.node("line", { x1: X(here.x), y1: Y(here.y), x2: X(here.x) + reach * Math.cos(a), y2: Y(here.y) - reach * Math.sin(a),
+        stroke: "var(--graphite)", "stroke-width": 1.5, "vector-effect": "non-scaling-stroke", opacity: 1 - (t - tick) / fade }, tracers);
+    }
+    // the key says what the drawing means, in words
+    if (me == null) key.textContent = "Choose a name beside the lanes to see the round as that player knew it.";
+    else if (!replay.visibility) key.textContent = `No map mesh for ${data.map_name}, so who saw whom is not known; ${nameOf(me.i)}'s view is the strong cone.`;
+    else key.textContent = `Enemies of ${nameOf(me.i)}: solid, ${nameOf(me.i)} sees them. Outline, only a teammate does. ` +
+      "Faint, nobody on the team does. Walls count; smokes and sound do not.";
+    // the time, everywhere it shows
+    const seconds = (t - start) / tickRate;
+    clockText.textContent = `${clock(seconds)} of ${clock((end - start) / tickRate)}`;
+    code.textContent = `demo_gototick ${Math.max(0, Math.round(t) - 128)}`;
+    lanes.style.setProperty("--at", frac(t));
+    lanes.setAttribute("aria-valuenow", Math.round(seconds));
+    lanes.setAttribute("aria-valuetext", `${clock(seconds)} into round ${number}`);
+    if (timelineHead) {
+      const span = data.rounds.find((r) => r.number === number);
+      const at = span ? (t - span.start_tick) / Math.max(1, span.end_tick - span.start_tick) : 0;
+      timelineHead.style.setProperty("--at", `${(4 + 92 * Math.min(1, Math.max(0, at))).toFixed(2)}%`);
+    }
+  };
+
+  // ---- playing, scrubbing, following ----
+  const remember = () => {
+    const [path, query] = location.hash.slice(1).split("?");
+    const params = new URLSearchParams(query || "");
+    params.set("t", Math.round(t));
+    history.replaceState(null, "", `#${path}?${params}`);
+  };
+  const seek = (tick) => { t = Math.min(Math.max(tick, rnd.t0), end - 1); draw(); };
+  const frame = (stamp) => {
+    if (!playing) return;
+    t += ((stamp - last) / 1000) * tickRate * speed;
+    last = stamp;
+    if (t >= end - 1) { t = end - 1; pause(); }
+    draw();
+    if (playing) raf = requestAnimationFrame(frame);
+  };
+  const pause = () => {
+    playing = false;
+    cancelAnimationFrame(raf);
+    play.textContent = "Play";
+    remember();
+  };
+  const start_ = () => {
+    if (t >= end - 1) t = rnd.t0;
+    playing = true;
+    play.textContent = "Pause";
+    last = performance.now();
+    raf = requestAnimationFrame(frame);
+  };
+  play.addEventListener("click", () => (playing ? pause() : start_()));
+  speeds.forEach((b, j) => b.addEventListener("click", () => {
+    speed = [1, 2, 4][j];
+    speeds.forEach((s) => s.setAttribute("aria-pressed", String(s === b)));
+  }));
+  for (const b of floorButtons) b.addEventListener("click", () => { floor = b.dataset.floor; floorChosen = true; draw(); });
+  const tickAt = (clientX) => {
+    const track = lanes.querySelector(".rtrack").getBoundingClientRect();
+    return start + ((clientX - track.left) / track.width) * (end - start);
+  };
+  lanes.addEventListener("pointerdown", (e) => {
+    if (e.target.closest(".rname")) return;
+    lanes.setPointerCapture(e.pointerId);
+    seek(tickAt(e.clientX));
+    const move = (ev) => seek(tickAt(ev.clientX));
+    const up = () => { lanes.removeEventListener("pointermove", move); lanes.removeEventListener("pointerup", up); remember(); };
+    lanes.addEventListener("pointermove", move);
+    lanes.addEventListener("pointerup", up);
+  });
+  // Space plays, the arrows jump between the round's kills, Esc closes
+  const killTicks = rnd.deaths.map((d) => d[0]).sort((a, b) => a - b);
+  node.addEventListener("keydown", (e) => {
+    if (e.target.closest("button") && e.key === " ") return; // a button's own Space
+    if (e.key === " ") { e.preventDefault(); playing ? pause() : start_(); }
+    else if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+      e.preventDefault();
+      const lead = 2 * tickRate; // land just before the kill, to watch it happen
+      const next = e.key === "ArrowRight" ? killTicks.find((k) => k - lead > t + 1) : [...killTicks].reverse().find((k) => k - lead < t - 1);
+      if (next != null) { seek(next - lead); remember(); }
+    } else if (e.key === "Escape") go({ r: null, f: null, t: null });
+  });
+
+  const setFollow = (pid) => {
+    const i = pid == null ? -1 : people.findIndex((p) => p.id === pid);
+    followed = i >= 0 && byIndex.has(i) ? i : null;
+    floorChosen = false;
+    for (const [j, b] of followButtons) {
+      b.setAttribute("aria-pressed", String(j === followed));
+      b.closest(".rlane").classList.toggle("followed", j === followed);
+    }
+    draw();
+  };
+  const attach = (grid) => {
+    if (!grid) return;
+    grid.querySelectorAll(".tl-playhead").forEach((x) => x.remove());
+    grid.querySelectorAll(".head.open").forEach((x) => x.classList.remove("open"));
+    const col = data.rounds.findIndex((r) => r.number === number);
+    if (col < 0) return;
+    const rows = grid.querySelectorAll(".lane-name").length + grid.querySelectorAll(".gap").length;
+    timelineHead = el("div", { class: "tl-playhead", "aria-hidden": "true", style: `grid-column:${col + 2} / span 1;grid-row:2 / span ${rows}` });
+    grid.append(timelineHead);
+    grid.querySelectorAll(".head")[col + 1]?.classList.add("open");
+    draw();
+  };
+  const stop = () => {
+    playing = false;
+    cancelAnimationFrame(raf);
+    timelineHead?.remove();
+    timelineHead = null;
+    document.querySelectorAll(".timeline .head.open").forEach((x) => x.classList.remove("open"));
+  };
+  setFollow(follow);
+  return { id, number, node, follow: setFollow, stop, attach, seek };
+}
+
 /** Crosshair-to-head distance over the last 1.5 s, hidden stretches hatched. */
 function trace(points, shots = []) {
   if (!points || !points.length) return el("p", { class: "muted" }, "No trace was recorded for this kill.");
@@ -1058,6 +1484,7 @@ function go(changes) {
 
 function navigate(e, id, players, player, kill) {
   if (!player || /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
+  if (document.activeElement.closest(".round")) return; // the round has its own keys
   const kills = player.kill_log;
   const at = kill ? kills.findIndex((k) => k.tick === kill.tick) : -1;
   if (e.key === "ArrowRight" && at < kills.length - 1) go({ k: kills[at + 1].tick });
@@ -1082,6 +1509,10 @@ async function route() {
   const parts = (path || "/").split("/").filter(Boolean);
   const params = new URLSearchParams(query || "");
   const scrollY = window.scrollY;
+  if (parts[0] !== "report" && openRound) {
+    openRound.stop();
+    openRound = null;
+  }
   if (parts[0] === "job") await job(parts[1]);
   else if (parts[0] === "report") {
     const same = view.dataset.report === parts[1];
