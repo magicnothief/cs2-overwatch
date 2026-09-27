@@ -51,6 +51,21 @@ def test_shares_and_extremes() -> None:
     assert set(PLAYER_FEATURE_COLUMNS) - set(PERCEPTION_COLUMNS) - timing <= set(row)
 
 
+def test_a_sniper_flick_is_not_a_fast_kill() -> None:
+    windows = _windows(
+        [
+            {"speed_at_kill": 900.0, "weapon": "awp"},
+            {"speed_at_kill": 900.0, "weapon": "ssg08"},
+            {"speed_at_kill": 900.0, "weapon": "ak47"},
+            {"speed_at_kill": 900.0, "weapon": "deagle"},
+            {"speed_at_kill": 5.0, "weapon": "ak47"},
+        ]
+    )
+    row = build_player_features(windows).row(0, named=True)
+    assert row["snap_kills"] == 2  # the rifle and the pistol, not the two snipers
+    assert row["snap_max"] == pytest.approx(900.0)  # v4's line still sees every kill
+
+
 def test_sniper_share_is_context_never_a_model_input() -> None:
     # a detector that sees weapon mix learns "snipes a lot" as "cheats" (ADR 0008)
     assert not set(CONTEXT_COLUMNS) & set(PLAYER_FEATURE_COLUMNS)

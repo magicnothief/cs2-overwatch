@@ -139,7 +139,10 @@ FEATURE_LABELS: dict[str, tuple[str, str]] = {
         "lower",
     ),
     "snap_max": ("fastest turn on a kill tick (deg/s)", "higher"),
-    "snap_kills": ("kills with a turn over 175 deg/s on the kill tick", "higher"),
+    "snap_kills": (
+        "non-sniper kills with a turn over 175 deg/s on the kill tick",
+        "higher",
+    ),
     "arrival_shot_share": (
         "kills fired on the very tick the crosshair swept onto the head",
         "higher",

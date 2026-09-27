@@ -310,12 +310,12 @@ class TestAJudgeOnlyReadsWhatItWasTrainedOn:
         assert _measurements(text) == [
             "flicks that never change direction",
             "time aimed at an enemy they could not see",
-            "kills with a turn over 175 deg/s on the kill tick",
+            "non-sniper kills with a turn over 175 deg/s on the kill tick",
             "kills fired on the very tick the crosshair swept onto the head",
         ]
         # and with their baselines, as every figure in this format is
         assert (
-            "- kills with a turn over 175 deg/s on the kill tick: 7.0 "
+            "- non-sniper kills with a turn over 175 deg/s on the kill tick: 7.0 "
             "(clean 1.0, higher is suspicious)" in text
         )
         assert (

@@ -40,7 +40,7 @@ gates (`docs/evals/2026-09-26-judge-v5-ship-gates.md`).
 | question | answer |
 |---|---|
 | when a target says `cheating` | only with corroboration |
-| snipers | fast turns count rifle kills only; pre-aims are wallhack evidence, set aside for heavy snipers by rule 3 |
+| snipers | fast turns count non-sniper kills only; pre-aims are wallhack evidence, set aside for heavy snipers by rule 3 |
 | the pre-aim count | in v6 only if pros pass its check |
 
 ## Design
@@ -55,11 +55,12 @@ for judge 6 (`LATEST_JUDGE = 6`).
   crosshair itself moved onto the head, at 50 deg/s or more on that tick
   (`shots.ARRIVAL_SWEEP_DPS`); at least 5 eligible kills (`MIN_ARRIVAL_KILLS`).
   Judge text: "kills fired on the very tick the crosshair swept onto the head".
-- **`snap_kills`, rifle kills only.** Kills made with a non-sniper weapon with a
-  turn over 175 deg/s on the kill tick (`SNAP_THRESHOLD_DPS`). Its lines are
-  floored (`targets.LINE_FLOORS`): at least 3 kills to be notable, 4 to be
-  strong, so two fast kills never decide anything. Judge text: "rifle kills with
-  a turn over 175 deg/s on the kill tick".
+- **`snap_kills`, non-sniper kills only.** Kills made with any weapon but a
+  sniper rifle (pistols and SMGs count) with a turn over 175 deg/s on the kill
+  tick (`SNAP_THRESHOLD_DPS`). Its lines are floored (`targets.LINE_FLOORS`): at
+  least 3 kills to be notable, 4 to be strong, so two fast kills never decide
+  anything. Judge text: "non-sniper kills with a turn over 175 deg/s on the kill
+  tick".
 - **`preaim_count`, new, if it passes section 2.** Per match, the stretches where
   the crosshair stays within 5 deg of the head of an enemy nobody on the
   player's team can see (mesh line of sight and field of view), for 0.5 s or
@@ -77,7 +78,7 @@ clean CS2CD players, as the judge's do.
 | measurement | passes if | data |
 |---|---|---|
 | `arrival_shot_share` | at most 1% of pros past its 95% line, of those it is shown for and of all | the dumps as they are |
-| `snap_kills` (rifle) | at most 1% of pros past its notable line | the dumps as they are (weapon and turn per kill) |
+| `snap_kills` (non-sniper) | at most 1% of pros past its notable line | the dumps as they are (weapon and turn per kill) |
 | `preaim_count` | at most 5% of pros past its 95% line and 1% past its 99% line | the 175 demos again, parsed and ray cast (a few hours of CPU) |
 
 A measurement that fails stays out of v6; the others go ahead. The thresholds
@@ -109,7 +110,7 @@ alone, 40 on notable lines only.
 ### 4. Building v6
 
 - Features: `player_features` gains `preaim_count` (CS2CD matches with a map
-  mesh; null otherwise) if section 2 passes it; `snap_kills` counts rifle kills.
+  mesh; null otherwise) if section 2 passes it; `snap_kills` counts non-sniper kills.
   The analysis pipeline computes the same from a demo (the replay already ray
   casts who sees whom, so the cost is small).
 - Rebuild the dataset, the judge cases and the training set
@@ -137,8 +138,8 @@ Then: publish v6 and its reference to Hugging Face, pin them
 - **The pro sample is used twice**: once to accept or reject the three
   measurements (section 2, pass or fail, no choosing between definitions), once
   for the judge's gate. Nothing is tuned on it in between.
-- **CS2CD has no held weapon per tick**, so the pre-aim count cannot be limited
-  to rifles; rule 3 is what keeps it from convicting AWP players.
+- **CS2CD has no held weapon per tick**, so the pre-aim count cannot leave out
+  sniper rifles; rule 3 is what keeps it from convicting AWP players.
 - **The `preaim_count` pro run needs the demos again** (they were streamed and
   deleted); a download that fails is retried, and a demo that cannot be fetched
   is left out and counted.
@@ -147,7 +148,7 @@ Then: publish v6 and its reference to Hugging Face, pin them
 
 0. Land the measurement changes already written (arrival sweep, 175 deg/s, line
    floors, judge 6 labels), with their tests.
-1. `snap_kills` counts rifle kills; tests.
+1. `snap_kills` counts non-sniper kills; tests.
 2. Section 2 for `arrival_shot_share` and `snap_kills` from the dumps; results to
    `docs/evals/`.
 3. `preaim_count`: the rule into product code (`l2_perception`), the pro run on

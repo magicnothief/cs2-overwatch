@@ -141,6 +141,11 @@ def build_player_features(
         if "weapon" in window_features.columns
         else {}
     )
+    sniper_kill = (
+        pl.col("weapon").is_in(SNIPERS).fill_null(False)
+        if "weapon" in window_features.columns
+        else pl.lit(False)
+    )
     has_perception = "visible_share_engage" in window_features.columns
     has_timing = "arrival_shot" in window_features.columns
 
@@ -154,8 +159,12 @@ def build_player_features(
             snap_max=pl.col("speed_at_kill").max(),
             snap_p90=pl.col("speed_at_kill").quantile(0.9),
             snap_share=(pl.col("speed_at_kill") > SNAP_THRESHOLD_DPS).mean(),
-            # a count, not the fastest single turn: one flick is common, several not
-            snap_kills=(pl.col("speed_at_kill") > SNAP_THRESHOLD_DPS).sum(),
+            # a count, not the fastest single turn: one flick is common, several not;
+            # and never a sniper's, whose flicks are how AWPs are played (judge v6
+            # spec, docs/specs/2026-09-27-judge-v6-evidence.md)
+            snap_kills=(
+                (pl.col("speed_at_kill") > SNAP_THRESHOLD_DPS) & ~sniper_kill
+            ).sum(),
             peak_speed_p90=pl.col("peak_speed_engage").quantile(0.9),
             peak_speed_median=pl.col("peak_speed_engage").median(),
             settle_ratio_median=pl.col("settle_ratio").median(),

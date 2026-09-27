@@ -144,8 +144,8 @@ CHECKS: list[tuple[str, bool, str, str]] = [
         True,
         "aimbot",
         (
-            "{value} of their kills came with a turn over 175 deg/s on the kill "
-            "tick, against {base} for clean players"
+            "{value} of their non-sniper kills came with a turn over 175 deg/s on "
+            "the kill tick, against {base} for clean players"
         ),
     ),
     (
