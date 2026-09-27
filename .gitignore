@@ -26,3 +26,7 @@ runs/
 tools/
 # a tiny random-weight scorer the tests run on (tests/test_pipeline.py)
 !tests/fixtures/scorer_tiny.onnx
+
+# local run logs and Claude Code's per-machine settings
+/logs/
+/.claude/settings.local.json
