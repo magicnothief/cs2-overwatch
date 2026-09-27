@@ -2,7 +2,7 @@
 
 Each version's section becomes its release notes on GitHub. Newest first.
 
-## Unreleased
+## 0.5.0 (2026-09-27)
 
 **Round replay**
 - Any round can be replayed on the radar: everyone moving and where they look,
@@ -25,6 +25,10 @@ Each version's section becomes its release notes on GitHub. Newest first.
   the match showed up as an extra, empty round. A round is now its play time,
   from the end of its buy time to the next one, the same in the timeline and the
   replay. Reports analysed before keep their old columns.
+
+**The judge**
+- Still judge v4, reading exactly what it read in 0.4.0: round numbers are not
+  part of its evidence, so the timeline's fix does not reach it.
 
 ## 0.4.0 (2026-09-27)
 
