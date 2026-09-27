@@ -34,6 +34,7 @@ from overwatch.layers.l4_judge.cases import (
     pick_moments,
     trajectory_for,
 )
+from overwatch.layers.l4_judge.guard import guard
 from overwatch.layers.l4_judge.judge import Judge
 from overwatch.layers.l4_judge.rendering import render_case
 from overwatch.maps import prepare_map
@@ -286,6 +287,12 @@ def analyze_match(
             # this judge's format, not the newest one: see rendering.FEATURE_SINCE_JUDGE
             report.judge_evidence = render_case(case, judge=judge.generation)
             report.verdict = result.verdict
+            if result.verdict is not None:
+                # an accusation needs corroboration, whatever the judge learned
+                shown, held = guard(result.verdict, case, judge.generation)
+                if held is not None:
+                    report.judge_said, report.verdict = result.verdict, shown
+                    report.judge_held = held
             report.judge_error = result.error
     lap("layer 4")
 

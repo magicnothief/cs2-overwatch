@@ -1,6 +1,12 @@
 # Judge v6: evidence that pros do not trip, and no accusation on one line
 
-Status: design approved 2026-09-27; this spec is for review. Brainstormed with
+Status: approved 2026-09-27; partly done, the retrain parked. Section 2 ran
+(`docs/evals/2026-09-27-v6-measurements-pro-check.md`): `arrival_shot_share`
+failed its pro check and stays out; `snap_kills` (non-sniper) passed but rarely
+fires. With little new evidence left, the user chose to ship section 3 now as a
+guard on the pinned judge's verdicts (`l4_judge/guard.py`, 0.5.1) and to park
+the retrain and the `preaim_count` pro run until a stronger measurement joins
+them. The training targets already follow section 3 (`targets.corroborated`). Brainstormed with
 the superpowers brainstorming process, architectural path. Replaces the v5 plan
 (`docs/specs/2026-09-26-triggerbot-and-snap-count.md`), whose judge failed its pro
 gates (`docs/evals/2026-09-26-judge-v5-ship-gates.md`).

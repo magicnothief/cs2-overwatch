@@ -374,6 +374,8 @@ button.small { font-size: var(--s-1); padding: 0.3em 0.8em; }
 .radar svg text { font-family: Archivo, system-ui, sans-serif; font-stretch: 87%; font-weight: 600; }
 .radar input[type="range"] { width: 100%; margin: 0.6rem 0 0.2rem; accent-color: var(--graphite); }
 
+.held { font-size: var(--s-1); color: var(--muted); border-left: 3px solid var(--grid); padding-left: var(--space-3); }
+
 /* ---------- a round, replayed ---------- */
 
 .round { margin: var(--space-6) 0 var(--space-7); padding-top: var(--space-5); border-top: 1px solid var(--grid); outline: none; }

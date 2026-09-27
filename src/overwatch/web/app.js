@@ -1450,6 +1450,8 @@ function playerPanel(p, data) {
     lines.push(el("p", {},
       el("span", { class: `verdict ${v.verdict}` }, `${sentence(v.verdict)}, ${v.probability}%`),
       v.verdict === "cheating" && v.cheat_type !== "none" ? ` Suspected ${v.cheat_type}.` : ""));
+    // an accusation needs corroboration (l4_judge/guard.py): say it was held, and why
+    if (p.judge_held) lines.push(el("p", { class: "held" }, p.judge_held));
     lines.push(el("ul", {}, v.reasons.map((r) => el("li", {}, sentence(r)))));
     if (v.caveats.length) {
       lines.push(el("h3", {}, "What would change its mind"));

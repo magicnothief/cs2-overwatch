@@ -107,6 +107,13 @@ class PlayerReport(BaseModel):
         default_factory=list, description="every kill, in order"
     )
     verdict: Verdict | None = None
+    judge_held: str | None = Field(
+        default=None,
+        description="why a cheating verdict was held at unclear (l4_judge/guard.py)",
+    )
+    judge_said: Verdict | None = Field(
+        default=None, description="the judge's own verdict, when it was held back"
+    )
     judge_error: str | None = None
     judge_evidence: str | None = Field(
         default=None, description="the exact text the judge read"

@@ -9,7 +9,14 @@ import random
 
 from overwatch.layers.l4_judge import MomentSummary, PlayerCase, render_case
 from overwatch.layers.l4_judge.rendering import LATEST_JUDGE, unseen_numbers
-from overwatch.layers.l4_judge.targets import build_target, case_rng, verdict_for
+from overwatch.layers.l4_judge.targets import (
+    RULE_REASON,
+    UNCLEAR_PROBABILITY,
+    build_target,
+    case_rng,
+    corroborated,
+    verdict_for,
+)
 from overwatch.layers.l4_judge.verdict import VerdictLabel
 from overwatch.schemas.evidence import Evidence, Severity
 
@@ -120,14 +127,43 @@ def _kill(tick: int, **context) -> MomentSummary:
     return MomentSummary(tick=tick, wall_aim_share=1.0, sight_checked=True, **context)
 
 
-def test_repeated_aim_at_unseen_unheard_enemies_tips_notable_evidence() -> None:
-    # two notable measurements (0.8) fall short on their own; the pattern adds 0.4
+def test_notable_evidence_alone_is_a_doubt_not_an_accusation() -> None:
+    # two notable measurements and the unseen-unheard pattern weigh 1.2, past
+    # DECISIVE, but none is past a 99% line: corroboration says unclear
     case = _case(straight_share=0.5, corrections_mean=0.5).model_copy(
+        update={"moments": [_kill(100), _kill(200), _kill(300, last_seen_ms=900.0)]}
+    )
+    target = build_target(case, random.Random(0))
+    assert target.verdict is VerdictLabel.UNCLEAR
+    assert target.probability <= UNCLEAR_PROBABILITY[1]
+
+
+def test_repeated_aim_at_unseen_unheard_enemies_corroborates_a_strong_line() -> None:
+    case = _case(straight_share=0.7).model_copy(
         update={"moments": [_kill(100), _kill(200), _kill(300, last_seen_ms=900.0)]}
     )
     target = build_target(case, random.Random(0))
     assert target.verdict is VerdictLabel.CHEATING
     assert any("2 of their 3" in reason for reason in target.reasons)
+
+
+def test_one_strong_line_alone_is_unclear() -> None:
+    """1 clean player in 100 is past a 99% line by construction (the v6 spec, s3)."""
+    target = build_target(_case(straight_share=0.7), random.Random(0))
+    assert target.verdict is VerdictLabel.UNCLEAR
+    assert any("the strongest signal" in reason for reason in target.reasons)
+
+
+def test_what_corroborates() -> None:
+    strong, notable = ("a line", 1.0, "aimbot"), ("a line", 0.4, "aimbot")
+    rule_strong = (f"{RULE_REASON}: x", 1.0, "aimbot")
+    rule_impossible = (f"{RULE_REASON}: y", 2.0, "aimbot")
+    assert not corroborated([strong])
+    assert not corroborated([notable, notable, notable])
+    assert not corroborated([rule_strong, notable])
+    assert corroborated([strong, notable])
+    assert corroborated([strong, rule_strong])
+    assert corroborated([rule_impossible])
 
 
 def test_one_unexplained_kill_is_not_enough() -> None:

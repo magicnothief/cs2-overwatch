@@ -2,6 +2,17 @@
 
 Each version's section becomes its release notes on GitHub. Newest first.
 
+## 0.5.1 (2026-09-27)
+
+**The judge**
+- The judge can no longer accuse a player on one measurement alone. A
+  measurement past the line 99% of clean players stay below puts 1 honest player
+  in 100 past it by construction, so a "cheating" verdict now needs two
+  measurements past their lines (one of them past 99%), or a hard-limit finding.
+  When the judge says "cheating" without that, the review shows "unclear" and
+  says, under the verdict, what the judge said and why it was held back. The
+  judge itself (v4) is unchanged; nothing it said about clean players changes.
+
 ## 0.5.0 (2026-09-27)
 
 **Round replay**

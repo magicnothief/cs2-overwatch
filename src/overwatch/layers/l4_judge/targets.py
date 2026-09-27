@@ -83,6 +83,9 @@ WEIGHTS = {"notable": 0.4, "strong": 1.0}
 DECISIVE = 1.0
 #: Layer 1 hits sit outside the clean range by construction (thresholds.py).
 RULE_WEIGHTS = {"impossible": 2.0, "strong": 1.0}
+#: How every Layer 1 point's reason begins, which is how corroboration tells them
+#: from measured lines.
+RULE_REASON = "a hard-limit check fired"
 
 #: A player with this much sniping gets the weapon caveat rather than a verdict.
 SNIPER_HEAVY = 0.5
@@ -263,7 +266,7 @@ def evidence_points(case: PlayerCase) -> list[tuple[str, float, str]]:
 
     for item in case.rule_evidence:
         weight = RULE_WEIGHTS.get(item.severity, WEIGHTS["notable"])
-        points.append((f"a hard-limit check fired: {item.note}", weight, "aimbot"))
+        points.append((f"{RULE_REASON}: {item.note}", weight, "aimbot"))
 
     return sorted(points, key=lambda item: -item[1])
 
@@ -376,6 +379,30 @@ def target_probability(weight: float, kills: int) -> int:
     return FEW_KILLS_PROBABILITY if kills < 10 else CLEAN_PROBABILITY
 
 
+def counted_points(case: PlayerCase) -> list[tuple[str, float, str]]:
+    """evidence_points, less what does not count towards a verdict: for a heavy
+    sniper, the perception measurements, which sniping inflates (ADR 0008)."""
+    sniper_heavy = case.features.get("sniper_share", 0.0) >= SNIPER_HEAVY
+    return [p for p in evidence_points(case) if not sniper_heavy or p[2] != "wallhack"]
+
+
+def corroborated(points: list[tuple[str, float, str]]) -> bool:
+    """Whether this evidence may carry an accusation, not just a doubt.
+
+    One line past a 99% quantile is 1 clean player in 100 by construction, so it is
+    never enough alone (docs/specs/2026-09-27-judge-v6-evidence.md, section 3). A
+    `cheating` verdict needs two measurements past their lines with one of them
+    strong, or a strong one and a Layer 1 strong finding, or a Layer 1 impossible
+    finding, which is not a statistical line at all.
+    """
+    rules = [p for p in points if p[0].startswith(RULE_REASON)]
+    lines = [p for p in points if not p[0].startswith(RULE_REASON)]
+    if any(weight >= RULE_WEIGHTS["impossible"] for _, weight, _ in rules):
+        return True
+    strong = any(weight >= WEIGHTS["strong"] for _, weight, _ in lines)
+    return strong and (len(lines) >= 2 or bool(rules))
+
+
 def build_target(case: PlayerCase, rng: random.Random) -> Verdict:
     """The verdict this case should produce, from its evidence alone.
 
@@ -384,15 +411,16 @@ def build_target(case: PlayerCase, rng: random.Random) -> Verdict:
     varies the wording of reasons that do not cite a measurement.
     """
     points = evidence_points(case)
-    sniper_heavy = case.features.get("sniper_share", 0.0) >= SNIPER_HEAVY
-    # sniping inflates the perception measurements, so for a heavy sniper only the
-    # aim-shape evidence counts towards a verdict (ADR 0008)
-    counted = [p for p in points if not sniper_heavy or p[2] != "wallhack"]
+    counted = counted_points(case)
     weight = sum(p[1] for p in counted)
 
     caveats = standard_caveats(case)
     probability = target_probability(weight, case.kills)
     verdict = verdict_for(probability)
+    if verdict is VerdictLabel.CHEATING and not corroborated(counted):
+        # enough weight, but on one line alone: a doubt, never an accusation
+        verdict = VerdictLabel.UNCLEAR
+        probability = min(probability, UNCLEAR_PROBABILITY[1])
 
     if verdict is VerdictLabel.CHEATING:
         cheats = {p[2] for p in counted}
