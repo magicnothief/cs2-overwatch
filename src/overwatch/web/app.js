@@ -699,6 +699,97 @@ function killDetail(k, radarMeta, mapName, shooter) {
 }
 
 /**
+ * The radar's drawing, shared by the kill radar and the round replay: an SVG in
+ * radar pixels (or world units when the map has none), each player a teardrop
+ * pointing where they look with a cone of view in their side's colour, and a
+ * name on the dot. `u` is one screen pixel in the SVG's own units.
+ */
+let radarCount = 0;
+
+function radarKit(svg, meta, u) {
+  const NS = "http://www.w3.org/2000/svg";
+  const upp = meta ? meta.units_per_pixel : 1;
+  const X = (x) => (meta ? (x - meta.x_min) / upp : x);
+  const Y = (y) => (meta ? (meta.y_max - y) / upp : -y);
+  const node = (tag, attrs, parent = svg) => {
+    const n = document.createElementNS(NS, tag);
+    for (const [key, value] of Object.entries(attrs)) n.setAttribute(key, value);
+    parent.append(n);
+    return n;
+  };
+  const add = (tag, attrs) => node(tag, attrs);
+  const colour = (side) => (side === "CT" ? "var(--ct)" : side === "T" ? "var(--t)" : "var(--graphite)");
+  const radarId = `radar${++radarCount}`;
+  const defs = add("defs", {});
+  // where a player looks: a cone of view that fades with distance, like a torch beam
+  const cone = (who, side, strength) => {
+    const beam = node("radialGradient", { id: `${radarId}-${who}`, gradientUnits: "userSpaceOnUse" }, defs);
+    for (const [offset, opacity] of [[0, strength], [1, 0]]) {
+      node("stop", { offset, style: `stop-color:${colour(side)};stop-opacity:${opacity}` }, beam);
+    }
+    return { beam, shape: add("path", { fill: `url(#${beam.id})` }) };
+  };
+  // a player is a teardrop pointing where they look (one shape, one outline, so the
+  // point reads at a glance), or a plain dot when their view is not known
+  const pointer = (side, r, parent = svg) => {
+    const group = node("g", {}, parent);
+    const a = (40 * Math.PI) / 180, tip = 2.5 * r;
+    const style = { stroke: "var(--paper)", "stroke-width": 1.5, "stroke-linejoin": "round",
+      "vector-effect": "non-scaling-stroke" };
+    const nose = node("path", { ...style, d: `M${tip},0 L${r * Math.cos(a)},${r * Math.sin(a)} ` +
+      `A${r},${r} 0 1 1 ${r * Math.cos(a)},${-r * Math.sin(a)} Z` }, group);
+    const dot = node("circle", { ...style, r }, group);
+    return { group, nose, dot, side };
+  };
+  // each dot carries its player's name: colours alone mislead once teams have
+  // swapped sides, since the timeline colours players by the side they started on
+  const short = (name) => (name && name.length > 16 ? `${name.slice(0, 15)}…` : name || "");
+  const tag = (name, side, weight, parent = svg) => {
+    const text = node("text", { "font-size": 10.5 * u, "font-weight": weight, fill: colour(side),
+      stroke: "var(--paper)", "stroke-width": 3, "paint-order": "stroke", "stroke-linejoin": "round",
+      "vector-effect": "non-scaling-stroke" }, parent);
+    text.textContent = short(name);
+    return text;
+  };
+  const nameAt = (text, x, y) => { text.setAttribute("x", x + 9 * u); text.setAttribute("y", y - 8 * u); };
+  // CS yaw: 0 along +x, counter-clockwise; the radar's y axis points down
+  const place = (marker, x, y, yaw) => {
+    marker.group.setAttribute("transform", `translate(${x} ${y}) rotate(${yaw == null ? 0 : -yaw})`);
+    marker.nose.setAttribute("visibility", yaw == null ? "hidden" : "visible");
+    marker.dot.setAttribute("visibility", yaw == null ? "visible" : "hidden");
+  };
+  const aim = (c, x, y, yaw, reach) => {
+    if (yaw == null) return c.shape.setAttribute("visibility", "hidden");
+    const half = (45 * Math.PI) / 180, t0 = (yaw * Math.PI) / 180;
+    const pt = (t) => `${x + reach * Math.cos(t)},${y - reach * Math.sin(t)}`;
+    c.shape.setAttribute("visibility", "visible");
+    c.shape.setAttribute("d", `M${x},${y} L${pt(t0 - half)} A${reach},${reach} 0 0,0 ${pt(t0 + half)} Z`);
+    c.beam.setAttribute("cx", x); c.beam.setAttribute("cy", y); c.beam.setAttribute("r", reach);
+  };
+  // solid in the side's colour, or hollow (a dead player, or one on the other floor)
+  const paint = (marker, side, hollow) => {
+    for (const shape of [marker.nose, marker.dot]) {
+      shape.setAttribute("fill", hollow ? "var(--paper)" : colour(side));
+      shape.setAttribute("stroke", hollow ? colour(side) : "var(--paper)");
+    }
+  };
+  // a 10 m scale bar whose left end sits at (bx, by)
+  const scaleBar = (bx, by) => {
+    const metre = 39.37 / upp;
+    add("line", { x1: bx, x2: bx + 10 * metre, y1: by, y2: by, stroke: "var(--graphite)", "stroke-width": 2, "vector-effect": "non-scaling-stroke" });
+    const label = add("text", { x: bx, y: by - 7 * u, "font-size": 10 * u, fill: "var(--graphite)" });
+    label.textContent = "10 m";
+  };
+  return { NS, X, Y, upp, node, add, defs, radarId, colour, cone, pointer, tag, nameAt, place, aim, paint, scaleBar };
+}
+
+/** How far a view points from a spot, 0-180 degrees. */
+const offBy = (yaw, fx, fy, tx, ty) => {
+  const bearing = (Math.atan2(ty - fy, tx - fx) * 180) / Math.PI;
+  return Math.abs(((yaw - bearing + 540) % 360) - 180);
+};
+
+/**
  * The kill from above: both players' trails through the approach, where each of
  * them is looking (a pointer on the dot, and a cone of view in their side's
  * colour), and the line between them (solid when they could see each other,
@@ -709,8 +800,6 @@ function killDetail(k, radarMeta, mapName, shooter) {
  * attacker stood at the shot; a toggle switches, and whatever is on the other
  * floor (a player, a stretch of trail) is drawn faded.
  */
-let radarCount = 0;
-
 function radarView(k, meta, mapName, shooter) {
   const NS = "http://www.w3.org/2000/svg";
   const path = k.path || [];
@@ -745,14 +834,9 @@ function radarView(k, meta, mapName, shooter) {
   svg.setAttribute("viewBox", `${cx - size / 2} ${cy - size / 2} ${size} ${size}`);
   const u = size / 340; // one screen pixel, roughly, at the usual panel width
 
-  const add = (tag, attrs) => {
-    const node = document.createElementNS(NS, tag);
-    for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
-    svg.append(node);
-    return node;
-  };
+  const kit = radarKit(svg, meta, u);
+  const { add, colour, cone, pointer, tag, nameAt, place, aim } = kit;
   const image = meta ? add("image", { x: 0, y: 0, width: meta.size, height: meta.size }) : null;
-  const colour = (side) => (side === "CT" ? "var(--ct)" : side === "T" ? "var(--t)" : "var(--graphite)");
   const away = (z) => levels != null && floorOf(z) != null && floorOf(z) !== floor;
   // a trail is one line per stretch on one floor, so the other floor's stretches can fade
   const stretches = [];
@@ -779,85 +863,16 @@ function radarView(k, meta, mapName, shooter) {
     for (const s of stretches) s.node.setAttribute("opacity", s.on && levels && s.on !== floor ? s.opacity * 0.3 : s.opacity);
     for (const b of buttons) b.setAttribute("aria-pressed", String(b.dataset.floor === floor));
   };
-  // where each player looks: a cone of view that fades with distance, like a torch
-  // beam, in their side's colour (the attacker's stronger), and a pointer on the dot
-  const radarId = `radar${++radarCount}`;
-  const defs = add("defs", {});
-  const cone = (who, side, strength) => {
-    const beam = document.createElementNS(NS, "radialGradient");
-    beam.id = `${radarId}-${who}`;
-    beam.setAttribute("gradientUnits", "userSpaceOnUse");
-    for (const [offset, opacity] of [[0, strength], [1, 0]]) {
-      const stop = document.createElementNS(NS, "stop");
-      stop.setAttribute("offset", offset);
-      stop.setAttribute("style", `stop-color:${colour(side)};stop-opacity:${opacity}`);
-      beam.append(stop);
-    }
-    defs.append(beam);
-    return { beam, shape: add("path", { fill: `url(#${beam.id})` }) };
-  };
+  // the attacker's cone is the stronger one
   const victimCone = cone("victim", k.victim_side, 0.26);
   const attackerCone = cone("attacker", k.attacker_side, 0.34);
   const sight = add("line", { stroke: "var(--graphite)", "stroke-width": 1.75, "vector-effect": "non-scaling-stroke" });
-  // a player is a teardrop pointing where they look (one shape, one outline, so the
-  // point reads at a glance), or a plain dot when their view is not known
-  const pointer = (side, r) => {
-    const group = add("g", {});
-    const a = (40 * Math.PI) / 180, tip = 2.5 * r;
-    const style = { stroke: "var(--paper)", "stroke-width": 1.5, "stroke-linejoin": "round",
-      "vector-effect": "non-scaling-stroke" };
-    const make = (tag, attrs) => {
-      const node = document.createElementNS(NS, tag);
-      for (const [key, value] of Object.entries({ ...style, ...attrs })) node.setAttribute(key, value);
-      group.append(node);
-      return node;
-    };
-    const nose = make("path", { d: `M${tip},0 L${r * Math.cos(a)},${r * Math.sin(a)} ` +
-      `A${r},${r} 0 1 1 ${r * Math.cos(a)},${-r * Math.sin(a)} Z` });
-    const dot = make("circle", { r });
-    return { group, nose, dot, side };
-  };
   const victim = pointer(k.victim_side, 5 * u);
   const attacker = pointer(k.attacker_side, 6 * u);
-  // each dot carries its player's name: colours alone mislead once teams have
-  // swapped sides, since the timeline colours players by the side they started on
-  const short = (name) => (name && name.length > 16 ? `${name.slice(0, 15)}…` : name || "");
-  const tag = (name, side, weight) => {
-    const text = add("text", { "font-size": 10.5 * u, "font-weight": weight, fill: colour(side),
-      stroke: "var(--paper)", "stroke-width": 3, "paint-order": "stroke", "stroke-linejoin": "round",
-      "vector-effect": "non-scaling-stroke" });
-    text.textContent = short(name);
-    return text;
-  };
   const victimTag = tag(k.victim || "victim", k.victim_side, 600);
   const attackerTag = tag(shooter || "attacker", k.attacker_side, 700);
-  const nameAt = (text, x, y) => { text.setAttribute("x", x + 9 * u); text.setAttribute("y", y - 8 * u); };
-  // CS yaw: 0 along +x, counter-clockwise; the radar's y axis points down
-  const place = (marker, x, y, yaw) => {
-    marker.group.setAttribute("transform", `translate(${x} ${y}) rotate(${yaw == null ? 0 : -yaw})`);
-    marker.nose.setAttribute("visibility", yaw == null ? "hidden" : "visible");
-    marker.dot.setAttribute("visibility", yaw == null ? "visible" : "hidden");
-  };
-  const aim = (c, x, y, yaw, reach) => {
-    if (yaw == null) return c.shape.setAttribute("visibility", "hidden");
-    const half = (45 * Math.PI) / 180, t0 = (yaw * Math.PI) / 180;
-    const pt = (t) => `${x + reach * Math.cos(t)},${y - reach * Math.sin(t)}`;
-    c.shape.setAttribute("visibility", "visible");
-    c.shape.setAttribute("d", `M${x},${y} L${pt(t0 - half)} A${reach},${reach} 0 0,0 ${pt(t0 + half)} Z`);
-    c.beam.setAttribute("cx", x); c.beam.setAttribute("cy", y); c.beam.setAttribute("r", reach);
-  };
-  // how far a view points from the other player, 0-180 degrees
-  const offBy = (yaw, fx, fy, tx, ty) => {
-    const bearing = (Math.atan2(ty - fy, tx - fx) * 180) / Math.PI;
-    return Math.abs(((yaw - bearing + 540) % 360) - 180);
-  };
-
   // a 10 m scale bar, bottom left
-  const metre = 39.37 / upp;
-  const bx = cx - size / 2 + 12 * u, by = cy + size / 2 - 12 * u;
-  add("line", { x1: bx, x2: bx + 10 * metre, y1: by, y2: by, stroke: "var(--graphite)", "stroke-width": 2, "vector-effect": "non-scaling-stroke" });
-  const label = add("text", { x: bx, y: by - 7 * u, "font-size": 10 * u, fill: "var(--graphite)" });
-  label.textContent = "10 m";
+  kit.scaleBar(cx - size / 2 + 12 * u, cy + size / 2 - 12 * u);
 
   const who = `${k.victim || "the victim"}`;
   const show = (i) => {
@@ -866,10 +881,7 @@ function radarView(k, meta, mapName, shooter) {
     const attackerAway = away(p.az), victimAway = p.vx != null && away(p.vz);
     // on the other floor: hollow and faded
     const paint = (marker, side, hollow, faded) => {
-      for (const shape of [marker.nose, marker.dot]) {
-        shape.setAttribute("fill", hollow ? "var(--paper)" : colour(side));
-        shape.setAttribute("stroke", hollow ? colour(side) : "var(--paper)");
-      }
+      kit.paint(marker, side, hollow);
       marker.group.setAttribute("opacity", faded ? 0.6 : 1);
     };
     place(attacker, ax, ay, p.yaw);
